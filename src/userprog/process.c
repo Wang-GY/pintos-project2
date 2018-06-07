@@ -21,6 +21,8 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+void extract_command(char* command,char* argv[],int* argc);
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -64,8 +66,11 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
 
   // load name const char* Executable file name
+  char *argv[MAX_ARGC];
+  int argc;
+  extract_command(file_name,argv,&argc);
 
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load (argv[0], &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -80,6 +85,43 @@ start_process (void *file_name_)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
+}
+
+/*
+split command by " ", return argc
+argv should have enough length.
+example: ls -l
+@param command
+@param argv[]
+@param argc
+
+@return
+command ls -l
+argc 2
+argv[0] ls
+argv[1] -l
+*/
+void extract_command(char* command,char* argv[],int* argc){
+  char* command_bak = NULL;
+  *argc=0;
+  command_bak = malloc(strlen(command)+1);
+  char* save = NULL;
+  char* temp = NULL;
+
+  // to command_bak, from command
+  strlcpy(command_bak,command,PGSIZE);
+
+
+  temp = strtok_r(command_bak," ",&save);
+  argv[*argc] = temp;
+
+  while (temp != NULL) {
+    (*argc)++;
+    temp = strtok_r(NULL," ",&save);
+    argv[*argc] = temp;
+  }
+
+  (*argc)++;
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
@@ -247,7 +289,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       printf ("load: %s: error loading executable\n", file_name);
       goto done;
     }
-
+  printf("open file success: %s\n",file_name);
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;
   for (i = 0; i < ehdr.e_phnum; i++)
