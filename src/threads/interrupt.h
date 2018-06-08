@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 /* Interrupts on or off? */
-enum intr_level 
+enum intr_level
   {
     INTR_OFF,             /* Interrupts disabled. */
     INTR_ON               /* Interrupts enabled. */
@@ -51,7 +51,7 @@ struct intr_frame
     void (*eip) (void);         /* Next instruction to execute. */
     uint16_t cs, :16;           /* Code segment for eip. */
     uint32_t eflags;            /* Saved CPU flags. */
-    void *esp;                  /* Saved stack pointer. */
+    void *esp;                  /* Saved stack pointer. */ //The interrupted thread’s stack pointer.
     uint16_t ss, :16;           /* Data segment for esp. */
   };
 

@@ -35,6 +35,7 @@ process_execute (const char *file_name)
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
+     // can not over 2KB(PGSIZE)
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
@@ -69,9 +70,50 @@ start_process (void *file_name_)
   char *argv[MAX_ARGC];
   int argc;
   extract_command(file_name,argv,&argc);
-
+  // eip: The address of the next instruction to be executed by the interrupted thread.
+  // esp: The interrupted thread’s stack pointer.
   success = load (argv[0], &if_.eip, &if_.esp);
 
+  //put arguments into stack;
+  int i=argc;
+  char * addr_arr[argc];
+  printf("%s\n","try to put args" );
+  while(--i>=0){
+    if_.esp = if_.esp - sizeof(char)*(strlen(argv[i])+1); //+1: extra \0
+    //strlcpy(if_.esp,argv[i],strlen(argv[i])+2);
+    addr_arr[i]=(char *)if_.esp;
+    printf("try to put args: %s\n",argv[i]);
+    memcpy(if_.esp,argv[i],strlen(argv[i])+1);
+  }
+  printf("%s\n","put args done!" );
+  // 4k  对齐
+  while ((int)if_.esp%4!=0) {
+    if_.esp--;
+    /* code */
+  }
+    printf("%s\n","word-align done!" );
+  //put argv[i]
+  i=argc;
+  if_.esp = if_.esp-4;
+  (*(int *)if_.esp)=0;
+  while (--i>=0) {
+    /* code */
+    if_.esp = if_.esp-4;//sizeof()
+    (*(char **)if_.esp) = addr_arr[i]; // if_.esp a pointer to uint32_t*
+  }
+  printf("%s\n","put argv[i] done!" );
+  // put argv
+  if_.esp = if_.esp-4;
+  (*(char **)if_.esp)=if_.esp+4;
+  printf("%s\n","put argv done!" );
+  //put argc
+  if_.esp = if_.esp-4;
+  (*(int *)if_.esp)=argc;
+  printf("%s\n","put argc done!" );
+  //put return address 0
+  if_.esp = if_.esp-4;
+  (*(int *)if_.esp)=0;
+  printf("%s\n","put return address done!" );
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success)
@@ -136,6 +178,8 @@ void extract_command(char* command,char* argv[],int* argc){
 int
 process_wait (tid_t child_tid UNUSED)
 {
+  //TODO: real process_wait
+  for(;;);
   return -1;
 }
 
