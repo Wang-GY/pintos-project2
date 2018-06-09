@@ -78,13 +78,14 @@ start_process (void *file_name_)
   int i=argc;
   char * addr_arr[argc];
   printf("%s\n","try to put args" );
-  printf("Address\t     Nmae\t  Data\n");
+  printf("Address\t         Nmae\t        Data\n");
   while(--i>=0){
     if_.esp = if_.esp - sizeof(char)*(strlen(argv[i])+1); //+1: extra \0
-    //strlcpy(if_.esp,argv[i],strlen(argv[i])+2);
+
     addr_arr[i]=(char *)if_.esp;
-    memcpy(if_.esp,argv[i],strlen(argv[i])+1);
-    printf("%d\targv[%d][...]\t'%s'\n",if_.esp,i,argv[i]);
+    //memcpy(if_.esp,argv[i],strlen(argv[i])+1);
+    strlcpy(if_.esp,argv[i],strlen(argv[i])+1);
+    printf("%d\targv[%d][...]\t'%s'\n",if_.esp,i,(char*)if_.esp);
 
   }
 
@@ -119,7 +120,7 @@ start_process (void *file_name_)
   if_.esp = if_.esp-4;
   (*(int *)if_.esp)=0;
   printf("%d\treturn address\t%d\n",if_.esp,(*(int *)if_.esp));
-  
+
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success)
@@ -207,7 +208,7 @@ process_exit (void)
          directory, or our active page directory will be one
          that's been freed (and cleared). */
       cur->pagedir = NULL;
-      pagedir_activate (NULL);
+      pagedir_activate (NULL); // set to init_page_dir
       pagedir_destroy (pd);
     }
 }
