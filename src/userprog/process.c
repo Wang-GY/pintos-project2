@@ -79,10 +79,11 @@ start_process (void *file_name_)
   char * addr_arr[argc];
   printf("%s\n","try to put args" );
   while(--i>=0){
+    printf("try to put args: %s\n",argv[i]);
     if_.esp = if_.esp - sizeof(char)*(strlen(argv[i])+1); //+1: extra \0
     //strlcpy(if_.esp,argv[i],strlen(argv[i])+2);
     addr_arr[i]=(char *)if_.esp;
-    printf("try to put args: %s\n",argv[i]);
+
     memcpy(if_.esp,argv[i],strlen(argv[i])+1);
   }
   printf("%s\n","put args done!" );
@@ -158,12 +159,10 @@ void extract_command(char* command,char* argv[],int* argc){
   argv[*argc] = temp;
 
   while (temp != NULL) {
-    (*argc)++;
+    (*argc)++; //will cause extra +1, need it!
     temp = strtok_r(NULL," ",&save);
     argv[*argc] = temp;
   }
-
-  (*argc)++;
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
