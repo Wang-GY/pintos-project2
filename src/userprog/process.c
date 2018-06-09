@@ -78,43 +78,48 @@ start_process (void *file_name_)
   int i=argc;
   char * addr_arr[argc];
   printf("%s\n","try to put args" );
+  printf("Address\t     Nmae\t  Data\n");
   while(--i>=0){
-    printf("try to put args: %s\n",argv[i]);
     if_.esp = if_.esp - sizeof(char)*(strlen(argv[i])+1); //+1: extra \0
     //strlcpy(if_.esp,argv[i],strlen(argv[i])+2);
     addr_arr[i]=(char *)if_.esp;
-
     memcpy(if_.esp,argv[i],strlen(argv[i])+1);
+    printf("%d\targv[%d][...]\t'%s'\n",if_.esp,i,argv[i]);
+
   }
-  printf("%s\n","put args done!" );
+
   // 4k  对齐
+  //world-align
   while ((int)if_.esp%4!=0) {
     if_.esp--;
-    /* code */
   }
-    printf("%s\n","word-align done!" );
-  //put argv[i]
+  printf("%d\tworld-align\t0\n", if_.esp);
+
   i=argc;
   if_.esp = if_.esp-4;
   (*(int *)if_.esp)=0;
+  printf("%d\targv[%d]\t%d\n",if_.esp,i,*((int *)if_.esp));
   while (--i>=0) {
-    /* code */
+
     if_.esp = if_.esp-4;//sizeof()
     (*(char **)if_.esp) = addr_arr[i]; // if_.esp a pointer to uint32_t*
+    printf("%d\targv[%d]\t%d\n",if_.esp,i,(*(char **)if_.esp));
   }
-  printf("%s\n","put argv[i] done!" );
-  // put argv
+
   if_.esp = if_.esp-4;
   (*(char **)if_.esp)=if_.esp+4;
-  printf("%s\n","put argv done!" );
+  printf("%d\targv\t%d\n",if_.esp,(*(char **)if_.esp));
+
   //put argc
   if_.esp = if_.esp-4;
   (*(int *)if_.esp)=argc;
-  printf("%s\n","put argc done!" );
+  printf("%d\targc\t%d\n",if_.esp,(*(int *)if_.esp));
+
   //put return address 0
   if_.esp = if_.esp-4;
   (*(int *)if_.esp)=0;
-  printf("%s\n","put return address done!" );
+  printf("%d\treturn address\t%d\n",if_.esp,(*(int *)if_.esp));
+  
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success)
