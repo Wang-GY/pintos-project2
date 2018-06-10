@@ -13,6 +13,8 @@
 #include "filesys/filesys.h"
 #include "threads/flags.h"
 #include "threads/init.h"
+#include "threads/synch.h"
+#include "threads/malloc.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
 #include "threads/thread.h"
@@ -23,6 +25,117 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
 void extract_command(char* command,char* argv[],int* argc);
 
+
+/*
+the list save all elem ready to read
+*/
+static struct list read_list;
+/**
+the list to save all read request
+*/
+static struct list wait_list;
+
+struct read_elem{
+  int pid;
+  enum action action;
+  struct list_elem elem;
+  int value;
+};
+
+struct wait_elem{
+  int pid;
+  enum action action;
+  struct list_elem elem;
+  struct semaphore sema;
+};
+
+void pipe_init(){
+  list_init(&read_list);
+  list_init(&wait_list);
+}
+
+/*
+add an elem to read list
+*/
+void write_pipe(int pid,enum action action,int value){
+  /*
+  create a elem in read_list
+  */
+  struct read_elem* read = malloc(sizeof(struct read_elem));
+  read->pid = pid;
+  read->action = action;
+  read->value = value;
+  list_push_back(&read_list,&read->elem);
+
+  /*
+  wake up the read request if necessary
+  */
+  struct list_elem *e;
+  for(e=list_begin(&wait_list);e!=list_end(&wait_list);e=list_next(e)){
+    struct wait_elem *we = list_entry(e,struct wait_elem,elem);
+    if(we->pid==pid&&we->action==action)
+      sema_up(&we->sema);
+  }
+
+}
+
+
+/*
+create a wait request
+*/
+struct wait_elem* create_wait_request(int pid,enum action action){
+  struct wait_elem *wait = malloc(sizeof(struct wait_elem));
+  // malloc fail;
+  if(wait == NULL){
+    return NULL;
+  }
+  wait->pid = pid;
+  wait->action = action;
+  sema_init(&wait->sema,0);
+}
+
+/*
+read the value in read list.
+create a read request if what the request want is not in read_list yet.
+*/
+int read_pipe(int pid,enum action action){
+
+  while (true) {
+    /*
+    if the value that reader want is already in the pipe, return the value and remove the
+    read_elem in the read_list
+    */
+    struct list_elem *e;
+    for(e=list_begin(&read_list);e!=list_end(&read_list);e=list_next(e)){
+      struct read_elem *re = list_entry(e,struct read_elem,elem);
+      if (re->pid==pid&&re->action==action){
+        list_remove(e);
+        int value = re->value;
+        free(re);
+        return value;
+      }
+    }
+
+    /*
+    create a wait request
+    */
+    struct wait_elem *wait = create_wait_request(pid,action);
+    sema_down(&wait->sema);
+    list_remove(&wait->elem);
+    free(wait);
+    continue;
+  }
+
+}
+
+
+
+// call at init.c
+void process_init(){
+  pipe_init();
+  // init root process
+  list_init(&thread_current()->children);
+}
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -45,9 +158,15 @@ process_execute (const char *file_name)
 
   // thread name: file_name(with arguments)
   // start_process arguments: fn_copy
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  char* thread_name,*save_ptr;
+  thread_name = strtok_r(file_name," ",&save_ptr);
+  // thread->name max 16
+  tid = thread_create (thread_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
+
+  // init
+
   return tid;
 }
 
@@ -77,15 +196,15 @@ start_process (void *file_name_)
   //put arguments into stack;
   int i=argc;
   char * addr_arr[argc];
-  printf("%s\n","try to put args" );
-  printf("Address\t         Nmae\t        Data\n");
+  //printf("%s\n","try to put args" );
+  //printf("Address\t         Nmae\t        Data\n");
   while(--i>=0){
     if_.esp = if_.esp - sizeof(char)*(strlen(argv[i])+1); //+1: extra \0
 
     addr_arr[i]=(char *)if_.esp;
     //memcpy(if_.esp,argv[i],strlen(argv[i])+1);
     strlcpy(if_.esp,argv[i],strlen(argv[i])+1);
-    printf("%d\targv[%d][...]\t'%s'\n",if_.esp,i,(char*)if_.esp);
+    //printf("%d\targv[%d][...]\t'%s'\n",if_.esp,i,(char*)if_.esp);
 
   }
 
@@ -94,32 +213,32 @@ start_process (void *file_name_)
   while ((int)if_.esp%4!=0) {
     if_.esp--;
   }
-  printf("%d\tworld-align\t0\n", if_.esp);
+  //printf("%d\tworld-align\t0\n", if_.esp);
 
   i=argc;
   if_.esp = if_.esp-4;
   (*(int *)if_.esp)=0;
-  printf("%d\targv[%d]\t%d\n",if_.esp,i,*((int *)if_.esp));
+  //printf("%d\targv[%d]\t%d\n",if_.esp,i,*((int *)if_.esp));
   while (--i>=0) {
 
     if_.esp = if_.esp-4;//sizeof()
     (*(char **)if_.esp) = addr_arr[i]; // if_.esp a pointer to uint32_t*
-    printf("%d\targv[%d]\t%d\n",if_.esp,i,(*(char **)if_.esp));
+    //printf("%d\targv[%d]\t%d\n",if_.esp,i,(*(char **)if_.esp));
   }
 
   if_.esp = if_.esp-4;
   (*(char **)if_.esp)=if_.esp+4;
-  printf("%d\targv\t%d\n",if_.esp,(*(char **)if_.esp));
+  //printf("%d\targv\t%d\n",if_.esp,(*(char **)if_.esp));
 
   //put argc
   if_.esp = if_.esp-4;
   (*(int *)if_.esp)=argc;
-  printf("%d\targc\t%d\n",if_.esp,(*(int *)if_.esp));
+  //printf("%d\targc\t%d\n",if_.esp,(*(int *)if_.esp));
 
   //put return address 0
   if_.esp = if_.esp-4;
   (*(int *)if_.esp)=0;
-  printf("%d\treturn address\t%d\n",if_.esp,(*(int *)if_.esp));
+  //printf("%d\treturn address\t%d\n",if_.esp,(*(int *)if_.esp));
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -183,8 +302,12 @@ void extract_command(char* command,char* argv[],int* argc){
 int
 process_wait (tid_t child_tid UNUSED)
 {
+  //printf("process wait\n");
   //TODO: real process_wait
+  //timer_sleep(1000);
+  //for(int i=0;i<99999999;i++);
   for(;;);
+  //printf("process wait done\n");
   return -1;
 }
 
@@ -211,6 +334,7 @@ process_exit (void)
       pagedir_activate (NULL); // set to init_page_dir
       pagedir_destroy (pd);
     }
+    //printf("process exit done\n");
 }
 
 /* Sets up the CPU for running user code in the current
@@ -338,7 +462,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       printf ("load: %s: error loading executable\n", file_name);
       goto done;
     }
-  printf("open file success: %s\n",file_name);
+
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;
   for (i = 0; i < ehdr.e_phnum; i++)

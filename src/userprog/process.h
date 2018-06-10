@@ -9,4 +9,24 @@ int process_wait (tid_t);
 void process_exit (void);
 void process_activate (void);
 
+/**
+file descriptor
+*/
+struct file_descriptor{
+  int fd;
+  struct list_elem elem; // list elem of a process's ownd file descriptor list
+  struct file* file; //opend files
+};
+
+
+/**
+a pipe to record process's exit status to implement wait sys call
+read list
+write list
+*/
+enum action{
+  EXEC,
+  WAIT
+};
+
 #endif /* userprog/process.h */
