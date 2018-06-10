@@ -80,21 +80,6 @@ void write_pipe(int pid,enum action action,int value){
 }
 
 
-/*
-create a wait request
-*/
-struct wait_elem* create_wait_request(int pid,enum action action){
-  struct wait_elem *wait = malloc(sizeof(struct wait_elem));
-  // malloc fail;
-  if(wait == NULL){
-    return NULL;
-  }
-  wait->pid = pid;
-  wait->action = action;
-  list_push_back(&wait_list,&wait->elem);
-  sema_init(&wait->sema,0);
-
-}
 
 /*
 read the value in read list.
@@ -222,7 +207,7 @@ process_execute (const char *file_name)
   p->thread = child;
 
   list_push_back(&thread_current()->children,&p->elem);
-  printf("%d add %d as child\n", thread_current()->tid,tid);
+  //printf("%d add %d as child\n", thread_current()->tid,tid);
 
   return tid;
 }
@@ -349,18 +334,32 @@ void extract_command(char* command,char* argv[],int* argc){
 
 /*
 return true if tid is a child of current theread
+if delete flag is set, also remove the child
+
+notice that if the child is removed but it is not terminated, the
+current thread still is this process's parent. it is recoread in
+the thread's parent_id.
 */
-bool is_child(tid_t tid){
+bool is_child(tid_t tid,bool delete){
   struct thread *cur = thread_current();
   struct list_elem *e;
 
   for(e = list_begin(&cur->children); e != list_end(&cur->children);e = list_next(e)){
     struct thread *t = list_entry(e,struct process,elem)->thread;
     if(tid == t->tid){
+      if(delete)
+        list_remove(e);
       return true;
     }
   }
   return false;
+}
+
+/*
+return true if current can wait this process
+*/
+bool can_wait(tid_t tid){
+  return is_child(tid,true);
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
@@ -379,7 +378,7 @@ process_wait (tid_t child_tid)
   //TODO: real process_wait
   //timer_sleep(1000);
   //for(int i=0;i<99999999;i++);
-  if(!is_child(child_tid)){
+  if(!can_wait(child_tid)){
     return -1;
   }
   return read_pipe(child_tid,WAIT);
@@ -419,7 +418,6 @@ process_exit (void)
     TODO: remove all children's signal in the pipe
     */
 
-    printf("process exit done\n");
 }
 
 /* Sets up the CPU for running user code in the current
