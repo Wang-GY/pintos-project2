@@ -18,6 +18,10 @@ struct file_descriptor{
   struct file* file; //opend files
 };
 
+struct process{
+  struct list_elem elem;
+  struct thread *thread;
+};
 
 /**
 a pipe to record process's exit status to implement wait sys call

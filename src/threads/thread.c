@@ -124,12 +124,6 @@ thread_tick (void)
 {
   struct thread *t = thread_current ();
 
-    // don't change the following 3 lines  *********   !!!
-    int len = strlen (t-> name);
-    if (t->name[len - 1] >= '0' && t->name[len - 1] <= '9')
-        printf ("(%c%c,%d) ", t->name[len - 2], t->name[len - 1], t->priority);
-    //things to help us testing your program  ***   !!!
-
   /* Update statistics. */
   if (t == idle_thread)
     idle_ticks++;

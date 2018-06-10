@@ -73,7 +73,7 @@ void write_pipe(int pid,enum action action,int value){
   struct list_elem *e;
   for(e=list_begin(&wait_list);e!=list_end(&wait_list);e=list_next(e)){
     struct wait_elem *we = list_entry(e,struct wait_elem,elem);
-    if(we->pid==pid&&we->action==action)
+    if(we->pid == pid && we->action == action)
       sema_up(&we->sema);
   }
 
@@ -91,7 +91,9 @@ struct wait_elem* create_wait_request(int pid,enum action action){
   }
   wait->pid = pid;
   wait->action = action;
+  list_push_back(&wait_list,&wait->elem);
   sema_init(&wait->sema,0);
+
 }
 
 /*
@@ -100,33 +102,73 @@ create a read request if what the request want is not in read_list yet.
 */
 int read_pipe(int pid,enum action action){
 
-  while (true) {
+  for(;;){
     /*
-    if the value that reader want is already in the pipe, return the value and remove the
-    read_elem in the read_list
+    check if what reader want already ready
     */
-    struct list_elem *e;
-    for(e=list_begin(&read_list);e!=list_end(&read_list);e=list_next(e)){
-      struct read_elem *re = list_entry(e,struct read_elem,elem);
-      if (re->pid==pid&&re->action==action){
+  struct list_elem *e;
+  for(e = list_begin(&read_list); e != list_end(&read_list); e = list_next(e) ){
+    struct read_elem *re = list_entry(e,struct read_elem, elem);
+    if(re->pid == pid && re->action == action){
+      list_remove(e);
+      int value = re->value;
+      free(re);
+      return value;
+    }
+  }
+  /*
+  what reader want is not in read_list, create a wait request
+  */
+  struct wait_elem *we = malloc(sizeof(struct wait_elem));
+  sema_init(&we->sema,0);
+  we->pid = pid;
+  we->action = action;
+  list_push_back(&wait_list,&we->elem);
+  sema_down(&we->sema);
+  /*
+  a writer has write something this reader want, the reader was unblocked and
+  clean the request and go to beginning
+  */
+  list_remove(&we->elem);
+  free(we);
+}
+}
+
+/*
+int read_pipe(int pid,enum action action){
+
+  struct list_elem *e;
+  for(e = list_begin(&read_list); e != list_end(&read_list); e = list_next(e) ){
+    struct read_elem *re = list_entry(e,struct read_elem, elem);
+    if(re->pid == pid && re->action == action){
+      list_remove(e);
+      int value = re->value;
+      free(re);
+      return value;
+    }
+  }
+
+  struct wait_elem *we = malloc(sizeof(struct wait_elem));
+  sema_init(&we->sema,0);
+  we->pid = pid;
+  we->action = action;
+  list_push_back(&wait_list,&we->elem);
+  sema_down(&we->sema);
+
+  for(e = list_begin(&read_list); e != list_end(&read_list); e = list_next(e) ){
+    struct read_elem *re = list_entry(e,struct read_elem, elem);
+      if(re->pid == pid && re->action == action){
         list_remove(e);
+        list_remove(&we->elem);
         int value = re->value;
         free(re);
+        free(we);
         return value;
       }
-    }
-
-    /*
-    create a wait request
-    */
-    struct wait_elem *wait = create_wait_request(pid,action);
-    sema_down(&wait->sema);
-    list_remove(&wait->elem);
-    free(wait);
-    continue;
   }
 
 }
+*/
 
 
 
@@ -165,7 +207,22 @@ process_execute (const char *file_name)
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
 
-  // init
+  /*
+  add this thread to children
+  */
+
+  struct thread *child = get_thread_by_tid(tid);
+  child->parent_id = thread_current()->tid;
+
+  struct process *p = malloc(sizeof(struct process));
+  if(p==NULL){
+
+    return -1;
+  }
+  p->thread = child;
+
+  list_push_back(&thread_current()->children,&p->elem);
+  printf("%d add %d as child\n", thread_current()->tid,tid);
 
   return tid;
 }
@@ -290,6 +347,22 @@ void extract_command(char* command,char* argv[],int* argc){
   }
 }
 
+/*
+return true if tid is a child of current theread
+*/
+bool is_child(tid_t tid){
+  struct thread *cur = thread_current();
+  struct list_elem *e;
+
+  for(e = list_begin(&cur->children); e != list_end(&cur->children);e = list_next(e)){
+    struct thread *t = list_entry(e,struct process,elem)->thread;
+    if(tid == t->tid){
+      return true;
+    }
+  }
+  return false;
+}
+
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
@@ -300,15 +373,18 @@ void extract_command(char* command,char* argv[],int* argc){
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED)
+process_wait (tid_t child_tid)
 {
   //printf("process wait\n");
   //TODO: real process_wait
   //timer_sleep(1000);
   //for(int i=0;i<99999999;i++);
-  for(;;);
+  if(!is_child(child_tid)){
+    return -1;
+  }
+  return read_pipe(child_tid,WAIT);
   //printf("process wait done\n");
-  return -1;
+  // return -1;
 }
 
 /* Free the current process's resources. */
@@ -334,7 +410,16 @@ process_exit (void)
       pagedir_activate (NULL); // set to init_page_dir
       pagedir_destroy (pd);
     }
-    //printf("process exit done\n");
+
+    /*
+    write to pipe "notify" father
+    */
+    write_pipe(cur->tid,WAIT,0);
+    /*
+    TODO: remove all children's signal in the pipe
+    */
+
+    printf("process exit done\n");
 }
 
 /* Sets up the CPU for running user code in the current
