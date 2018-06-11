@@ -3,6 +3,7 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
 
 #define STDIN 0
 #define STDOUT 1
@@ -49,12 +50,15 @@ void close (int fd);
 //store all syscalls
 static void (*syscall_handlers[SYS_CALL_NUM])(struct intr_frame *); // array of all system calls
 
-
+/*
+wait for process with pid
+*/
 int wait (pid_t pid){
-  process_wait(pid);
-  return 0;
-};
-
+  return process_wait(pid);
+}
+/*
+write buffer to stdout or file
+*/
 int write (int fd, const void *buffer, unsigned length){
   if(fd==STDOUT){ // stdout
       putbuf((char *) buffer,(size_t)length);
@@ -62,11 +66,20 @@ int write (int fd, const void *buffer, unsigned length){
   }
 }
 
+/*
+exit curret thread with given status
+*/
 void exit(int status){
   thread_current()->exit_status = status;
   thread_exit();
 }
 
+/*
+create  a process execute this file
+*/
+pid_t exec (const char *file){
+  return process_execute(file);
+}
 void
 syscall_init (void)
 {
@@ -94,8 +107,12 @@ syscall_init (void)
 static int
 get_user (const uint8_t *uaddr)
 {
-  if(!is_user_vaddr(uaddr))
+    //printf("%s\n", "call get user");
+  if(!is_user_vaddr(uaddr)){
+    //printf("%s\n", "get user below PHYS_BASE");
     return -1;
+  }
+  //printf("%s\n","is_user_vaddr" );
   int result;
   asm ("movl $1f, %0; movzbl %1, %0; 1:"
        : "=&a" (result) : "m" (*uaddr));
@@ -116,6 +133,22 @@ put_user (uint8_t *udst, uint8_t byte)
   return error_code != -1;
 }
 
+/*
+check the following address is valid:
+if one of them are not valid, the function will return false
+*/
+bool is_valid_pointer(void* esp,uint8_t argc){
+  uint8_t i = 0;
+for (; i < argc; ++i)
+{
+  if (get_user(((uint8_t *)esp)+i) == -1){
+    return false;
+  }
+}
+return true;
+}
+
+
 /* Halt the operating system. */
 void sys_halt(struct intr_frame* f){
   shutdown();
@@ -123,18 +156,31 @@ void sys_halt(struct intr_frame* f){
 
 /* Terminate this process. */
 void sys_exit(struct intr_frame* f){
-  int status = *((int *)f->esp+1);
+  if(!is_valid_pointer(f->esp+4,4)){
+    exit(-1);
+  }
+  int status = *(int *)(f->esp +4);
   exit(status);
 };
 
 /* Start another process. */
-void sus_exec(struct intr_frame* f){};
+void sus_exec(struct intr_frame* f){
+  // max name char[16]
+  if(!is_valid_pointer(f->esp+4,4)){
+    exit(-1);
+  }
+  char *file_name = *(char **)(f->esp+4);
+  f->eax = exec(file_name);
+};
 
 /* Wait for a child process to die. */
 void sys_wait(struct intr_frame* f){
   pid_t pid;
+  if(!is_valid_pointer(f->esp+4,4)){
+    exit(-1);
+  }
   pid = *((int*)f->esp+1);
-  wait(pid);
+  f->eax = wait(pid);
 };
 void sys_create(struct intr_frame* f){}; /* Create a file. */
 void sys_remove(struct intr_frame* f){};/* Create a file. */
@@ -143,15 +189,13 @@ void sys_filesize(struct intr_frame* f){};/* Obtain a file's size. */
 void sys_read(struct intr_frame* f){};  /* Read from a file. */
 
 void sys_write(struct intr_frame* f){
-  // printf("sys call write %s\n");
+  if(!is_valid_pointer(f->esp+4,12)){
+    exit(-1);
+  }
   int fd = *(int *)(f->esp +4);
   void *buffer = *(char**)(f->esp + 8);
   unsigned size = *(unsigned *)(f->esp + 12);
-  //printf("fd : %d\n",fd );
-  //printf("buff: %s\n",(char *)buffer);
-  //printf("size : %u\n",size );
   write(fd,buffer,size);
-
   return;
 }; /* Write to a file. */
 void sys_seek(struct intr_frame* f){}; /* Change position in a file. */
@@ -166,11 +210,15 @@ static void
 syscall_handler (struct intr_frame *f)
 {
   //printf ("system call!\n");
+  if(!is_valid_pointer(f->esp,4)){
+    exit(-1);
+    return;
+  }
   int syscall_num = * (int *)f->esp;
   //printf("system call number %d\n", syscall_num);
-
+  if(syscall_num<=0||syscall_num>=SYS_CALL_NUM){
+    exit(-1);
+  }
   syscall_handlers[syscall_num](f);
-  //printf("syscall %d done\n",syscall_num);
-  //thread_exit (); // call provess_exit instead
 
 }

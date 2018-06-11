@@ -389,7 +389,12 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
-
+  /*
+  don't exit kernel
+  */
+  if(cur->tid==1){
+    return;
+  }
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
