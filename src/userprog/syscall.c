@@ -108,8 +108,10 @@ static int
 get_user (const uint8_t *uaddr)
 {
     //printf("%s\n", "call get user");
-  if(!is_user_vaddr(uaddr)){
-    //printf("%s\n", "get user below PHYS_BASE");
+  if(!is_user_vaddr((void *)uaddr)){
+    return -1;
+  }
+  if(pagedir_get_page(thread_current()->pagedir,uaddr)==NULL){
     return -1;
   }
   //printf("%s\n","is_user_vaddr" );
@@ -141,7 +143,10 @@ bool is_valid_pointer(void* esp,uint8_t argc){
   uint8_t i = 0;
 for (; i < argc; ++i)
 {
-  if (get_user(((uint8_t *)esp)+i) == -1){
+  // if (get_user(((uint8_t *)esp)+i) == -1){
+  //   return false;
+  // }
+  if((!is_user_vaddr(esp))||(pagedir_get_page(thread_current()->pagedir,esp)==NULL)){
     return false;
   }
 }

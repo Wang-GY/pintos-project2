@@ -134,7 +134,7 @@ void *
 pagedir_get_page (uint32_t *pd, const void *uaddr)
 {
   uint32_t *pte;
-
+  
   ASSERT (is_user_vaddr (uaddr));
 
   pte = lookup_page (pd, uaddr, false);
