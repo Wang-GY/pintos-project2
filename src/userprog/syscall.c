@@ -50,6 +50,11 @@ void close (int fd);
 static void (*syscall_handlers[SYS_CALL_NUM])(struct intr_frame *); // array of all system calls
 
 
+int wait (pid_t pid){
+  process_wait(pid);
+  return 0;
+};
+
 int write (int fd, const void *buffer, unsigned length){
   if(fd==STDOUT){ // stdout
       putbuf((char *) buffer,(size_t)length);
@@ -57,6 +62,10 @@ int write (int fd, const void *buffer, unsigned length){
   }
 }
 
+void exit(int status){
+  thread_current()->exit_status = status;
+  thread_exit();
+}
 
 void
 syscall_init (void)
@@ -107,13 +116,26 @@ put_user (uint8_t *udst, uint8_t byte)
   return error_code != -1;
 }
 
+/* Halt the operating system. */
+void sys_halt(struct intr_frame* f){
+  shutdown();
+};
 
-void sys_halt(struct intr_frame* f){}; /* Halt the operating system. */
-void sys_exit(struct intr_frame* f){}; /* Terminate this process. */
-void sus_exec(struct intr_frame* f){}; /* Start another process. */
+/* Terminate this process. */
+void sys_exit(struct intr_frame* f){
+  int status = *((int *)f->esp+1);
+  exit(status);
+};
+
+/* Start another process. */
+void sus_exec(struct intr_frame* f){};
+
+/* Wait for a child process to die. */
 void sys_wait(struct intr_frame* f){
-
-}; /* Wait for a child process to die. */
+  pid_t pid;
+  pid = *((int*)f->esp+1);
+  wait(pid);
+};
 void sys_create(struct intr_frame* f){}; /* Create a file. */
 void sys_remove(struct intr_frame* f){};/* Create a file. */
 void sys_open(struct intr_frame* f){}; /*Open a file. */
@@ -121,13 +143,14 @@ void sys_filesize(struct intr_frame* f){};/* Obtain a file's size. */
 void sys_read(struct intr_frame* f){};  /* Read from a file. */
 
 void sys_write(struct intr_frame* f){
-  printf("sys call write %s\n");
-  int fd = *(int *)(f->esp + 4);
+  // printf("sys call write %s\n");
+  int fd = *(int *)(f->esp +4);
   void *buffer = *(char**)(f->esp + 8);
   unsigned size = *(unsigned *)(f->esp + 12);
-
+  //printf("fd : %d\n",fd );
+  //printf("buff: %s\n",(char *)buffer);
+  //printf("size : %u\n",size );
   write(fd,buffer,size);
-
 
   return;
 }; /* Write to a file. */
@@ -142,12 +165,12 @@ void sys_close(struct intr_frame* f){}; /* Close a file. */
 static void
 syscall_handler (struct intr_frame *f)
 {
-  printf ("system call!\n");
+  //printf ("system call!\n");
   int syscall_num = * (int *)f->esp;
-  printf("system call number %d\n", syscall_num);
+  //printf("system call number %d\n", syscall_num);
 
   syscall_handlers[syscall_num](f);
-  printf("syscall %d done\n",syscall_num);
-  thread_exit (); // call provess_exit instead
+  //printf("syscall %d done\n",syscall_num);
+  //thread_exit (); // call provess_exit instead
 
 }

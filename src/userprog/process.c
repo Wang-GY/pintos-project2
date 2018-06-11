@@ -244,8 +244,8 @@ start_process (void *file_name_)
     if_.esp = if_.esp - sizeof(char)*(strlen(argv[i])+1); //+1: extra \0
 
     addr_arr[i]=(char *)if_.esp;
-    //memcpy(if_.esp,argv[i],strlen(argv[i])+1);
-    strlcpy(if_.esp,argv[i],strlen(argv[i])+1);
+    memcpy(if_.esp,argv[i],strlen(argv[i])+1);
+    //strlcpy(if_.esp,argv[i],strlen(argv[i])+1);
     //printf("%d\targv[%d][...]\t'%s'\n",if_.esp,i,(char*)if_.esp);
 
   }
@@ -375,9 +375,6 @@ int
 process_wait (tid_t child_tid)
 {
   //printf("process wait\n");
-  //TODO: real process_wait
-  //timer_sleep(1000);
-  //for(int i=0;i<99999999;i++);
   if(!can_wait(child_tid)){
     return -1;
   }
@@ -417,7 +414,7 @@ process_exit (void)
     /*
     TODO: remove all children's signal in the pipe
     */
-
+    printf("%s: exit(%d)\n", cur->name, cur->exit_status);
 }
 
 /* Sets up the CPU for running user code in the current

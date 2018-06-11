@@ -100,6 +100,7 @@ struct thread
     struct list children;               /* child processes */
     struct list file_descriptors;       /* List of all file_descriptor it owns*/
     int next_fd; // next file descriptor of the process
+    int exit_status;
 #endif
 
     /* Owned by thread.c. */
