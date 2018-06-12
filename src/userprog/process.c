@@ -198,6 +198,7 @@ process_execute (const char *file_name)
 
   struct thread *child = get_thread_by_tid(tid);
   child->parent_id = thread_current()->tid;
+  
 
   struct process *p = malloc(sizeof(struct process));
   if(p==NULL){

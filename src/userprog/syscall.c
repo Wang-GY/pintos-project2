@@ -11,7 +11,7 @@
 
 #define STDIN 0
 #define STDOUT 1
-#define STDERR 2
+
 
 #define SYS_CALL_NUM 20
 static void syscall_handler (struct intr_frame *);
@@ -62,9 +62,9 @@ struct file_descriptor* get_fd_entry(int fd){
   struct list_elem *e;
   struct list *fd_list = &thread_current()->fd_list;
   for(e = list_begin(fd_list);e!=list_end(fd_list); e = list_next(e)){
-    struct file_descriptor *fd = list_entry(e , struct file_descriptor, elem);
-    if(fd->fd == fd){
-      return fd;
+    struct file_descriptor *fd_entry = list_entry(e , struct file_descriptor, elem);
+    if(fd_entry->fd == fd){
+      return fd_entry;
     }
   }
   return NULL;
@@ -109,7 +109,8 @@ int open (const char *file){
     struct file* f = filesys_open(file);
     // open  fail, kill the process
     if(f == NULL){
-      exit(-1);
+      //printf("%s\n","open fails");
+      return -1;
     }
 
     // add file descriptor
@@ -119,10 +120,14 @@ int open (const char *file){
       exit(-1);
     }
     struct thread *cur = thread_current();
-    fd->fd = cur->next_fd++;
+    fd->fd = cur->next_fd;
+    cur->next_fd++;
     fd->file = f;
     list_push_back(&cur->fd_list,&fd->elem);
-
+    // printf("open file %s with fd: %d\n",file,fd->fd);
+    int get_fd = fd->fd;
+    // TODO: why faild?
+    //ASSERT(get_fd_entry(get_fd)==fd);
     return fd->fd;
 
 }
@@ -162,6 +167,34 @@ void exit(int status){
   thread_exit();
 }
 
+/*
+Closes file descriptor fd. Exiting or terminating a process
+implicitly closes all its open file descriptors,
+ as if by calling this function for each one.
+*/
+void close (int fd){
+  struct file_descriptor *file_descriptor = get_fd_entry(fd);
+  // close more than once will fail
+  if(file_descriptor == NULL){
+    exit(-1);
+  }
+  file_close(file_descriptor->file);
+  list_remove(&file_descriptor->elem);
+  //TODO : fix free bug.
+  //free(file_descriptor);
+}
+
+/*
+Reads size bytes from the file open as fd into buffer.
+Returns the number of bytes actually read (0 at end of file),
+or -1 if the file could not be read (due to a condition other than end of file).
+ Fd 0 reads from the keyboard using input_getc().
+*/
+int read (int fd, void *buffer, unsigned length){
+  if(fd==STDIN){
+
+  }
+}
 /*
 create  a process execute this file
 */
@@ -316,7 +349,16 @@ void sys_write(struct intr_frame* f){
 }; /* Write to a file. */
 void sys_seek(struct intr_frame* f){}; /* Change position in a file. */
 void sys_tell(struct intr_frame* f){}; /* Report current position in a file. */
-void sys_close(struct intr_frame* f){}; /* Close a file. */
+
+void sys_close(struct intr_frame* f){
+  if (!is_valid_pointer(f->esp +4, 4)){
+    return exit(-1);
+  }
+  int fd = *(int *)(f->esp + 4);
+
+  close(fd);
+
+}; /* Close a file. */
 
 
 
