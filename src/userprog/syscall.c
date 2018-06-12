@@ -89,6 +89,17 @@ bool create (const char *file, unsigned initial_size){
 }
 
 /*
+delete the fiile called file.
+return true if successful, false otherwise
+A file may be removed regardless of whether it is
+open or closed. and removing an open file does not
+close it
+*/
+bool remove (const char *file){
+  return filesys_remove(file);
+}
+
+/*
 Opens the file called file. Returns a nonnegative integer handle called a “file descriptor” (fd), or -1 if the file could not be opened. File descriptors numbered 0 and 1 are reserved for the console:
 fd 0 (STDIN_FILENO) is standard input, fd 1 (STDOUT_FILENO) is standard ouint open (const char *file){
 tput.
@@ -117,7 +128,7 @@ int open (const char *file){
     struct file_descriptor *fd = malloc(sizeof(struct file_descriptor));
     // malloc fails
     if(fd == NULL){
-      exit(-1);
+      return -1; // open fail
     }
     struct thread *cur = thread_current();
     fd->fd = cur->next_fd;
@@ -125,7 +136,7 @@ int open (const char *file){
     fd->file = f;
     list_push_back(&cur->fd_list,&fd->elem);
     // printf("open file %s with fd: %d\n",file,fd->fd);
-    int get_fd = fd->fd;
+
     // TODO: why faild?
     //ASSERT(get_fd_entry(get_fd)==fd);
     return fd->fd;
@@ -191,8 +202,20 @@ or -1 if the file could not be read (due to a condition other than end of file).
  Fd 0 reads from the keyboard using input_getc().
 */
 int read (int fd, void *buffer, unsigned length){
-  if(fd==STDIN){
 
+  printf("syscall read : fd: %d\n",fd);
+  if(fd==STDIN){
+    for(unsigned int i=0;i<length;i++){
+      *((char **)buffer)[i] = input_getc();
+    }
+    return length;
+  }else{
+    struct file_descriptor *fd_entry = get_fd_entry(fd);
+    // file could not be read
+    if(fd == NULL){
+      return -1;
+    }
+    return file_read(fd_entry->file,buffer,length);
   }
 }
 /*
@@ -201,6 +224,33 @@ create  a process execute this file
 pid_t exec (const char *file){
   return process_execute(file);
 }
+
+
+void seek (int fd, unsigned position){
+  struct file_descriptor *fd_entry = get_fd_entry(fd);
+  if(fd == NULL){
+    exit(-1);
+  }
+  file_seek(fd_entry->file,position);
+}
+
+int filesize (int fd){
+  struct file_descriptor *fd_entry = get_fd_entry(fd);
+  if(fd_entry == NULL){
+    exit(-1);
+  }
+  return file_length(fd_entry->file);
+
+}
+
+unsigned tell (int fd){
+  struct file_descriptor *fd_entry = get_fd_entry(fd);
+  if(fd_entry == NULL){
+    exit(-1);
+  }
+  return file_tell(fd_entry->file);
+}
+
 void
 syscall_init (void)
 {
@@ -274,6 +324,18 @@ for (; i < argc; ++i)
 return true;
 }
 
+/*
+return true if it is a valid string
+*/
+bool is_valid_string(void *str){
+  int ch=-1;
+while((ch=get_user((uint8_t*)str++))!='\0' && ch!=-1);
+  if(ch=='\0')
+    return true;
+  else
+    return false;
+}
+
 
 /* Halt the operating system. */
 void sys_halt(struct intr_frame* f){
@@ -292,7 +354,7 @@ void sys_exit(struct intr_frame* f){
 /* Start another process. */
 void sus_exec(struct intr_frame* f){
   // max name char[16]
-  if(!is_valid_pointer(f->esp+4,4)){
+  if(!is_valid_pointer(f->esp+4,4)||!is_valid_string(*(char **)(f->esp + 4))){
     exit(-1);
   }
   char *file_name = *(char **)(f->esp+4);
@@ -308,35 +370,69 @@ void sys_wait(struct intr_frame* f){
   pid = *((int*)f->esp+1);
   f->eax = wait(pid);
 };
+
+
 void sys_create(struct intr_frame* f){
-if(!is_valid_pointer(f->esp+4,4)||!is_valid_pointer(f->esp+8,4)){
+if(!is_valid_pointer(f->esp+4,4)){
   exit(-1);
 }
 char* file_name = *(char **)(f->esp+4);
+if(!is_valid_string(file_name)){
+  exit(-1);
+}
 unsigned size = *(int *)(f->esp+8);
 f->eax = create(file_name,size);
 
 }; /* Create a file. */
 
-void sys_remove(struct intr_frame* f){};/* Create a file. */
+void sys_remove(struct intr_frame* f){
+  if (!is_valid_pointer(f->esp +4, 4) || !is_valid_string(*(char **)(f->esp + 4))){
+    exit(-1);
+  }
+  char file_name = *(char **)(f->esp+4);
+  f->eax = remove(file_name);
+
+};/* Create a file. */
 void sys_open(struct intr_frame* f){
 
   if (!is_valid_pointer(f->esp +4, 4)){
     exit(-1);
   }
-
+  if (!is_valid_string(*(char **)(f->esp + 4))){
+    exit(-1);
+  }
   char *file_name = *(char **)(f->esp+4);
   f->eax = open(file_name);
 
 
 }; /*Open a file. */
 
-void sys_filesize(struct intr_frame* f){};/* Obtain a file's size. */
+void sys_filesize(struct intr_frame* f){
+  if (!is_valid_pointer(f->esp +4, 4)){
+    exit(-1);
+  }
+  int fd = *(int *)(f->esp + 4);
+
+  f->eax = filesize(fd);
+
+
+};/* Obtain a file's size. */
 void sys_read(struct intr_frame* f){
+  if (!is_valid_pointer(f->esp + 4, 12)){
+    return -1;
+  }
+  int fd = *(int *)(f->esp + 4);
+  void *buffer = *(char**)(f->esp + 8);
+  unsigned size = *(unsigned *)(f->esp + 12);
+  if (!is_valid_pointer(buffer, 1) || !is_valid_pointer(buffer + size,1)){
+    return -1;
+  }
 
+  f->eax = read(fd,buffer,size);
 
-};  /* Read from a file. */
+};
 
+/* Read from a file. */
 void sys_write(struct intr_frame* f){
   if(!is_valid_pointer(f->esp+4,12)){
     exit(-1);
@@ -344,11 +440,29 @@ void sys_write(struct intr_frame* f){
   int fd = *(int *)(f->esp +4);
   void *buffer = *(char**)(f->esp + 8);
   unsigned size = *(unsigned *)(f->esp + 12);
+  if (!is_valid_pointer(buffer, 1) || !is_valid_pointer(buffer + size,1)){
+    exit(-1);
+}
   write(fd,buffer,size);
   return;
 }; /* Write to a file. */
-void sys_seek(struct intr_frame* f){}; /* Change position in a file. */
-void sys_tell(struct intr_frame* f){}; /* Report current position in a file. */
+
+void sys_seek(struct intr_frame* f){
+  if (!is_valid_pointer(f->esp +4, 8)){
+    exit(-1);
+  }
+  int fd = *(int *)(f->esp + 4);
+  unsigned pos = *(unsigned *)(f->esp + 8);
+  seek(fd,pos);
+}; /* Change position in a file. */
+
+void sys_tell(struct intr_frame* f){
+  if (!is_valid_pointer(f->esp +4, 4)){
+    exit(-1);
+  }
+    int fd = *(int *)(f->esp + 4);
+    f->eax = tell(fd);
+}; /* Report current position in a file. */
 
 void sys_close(struct intr_frame* f){
   if (!is_valid_pointer(f->esp +4, 4)){
