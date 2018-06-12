@@ -285,7 +285,7 @@ thread_exit (void)
 #ifdef USERPROG
   process_exit ();
 #endif
-  
+
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
@@ -482,7 +482,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
   #ifdef USERPROG
     t->next_fd = 3; //expect for std io
-    list_init(&(t->file_descriptors));
+    list_init(&(t->fd_list));
     list_init(&t->children);
   #endif
 

@@ -4,6 +4,10 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "userprog/process.h"
+#include "filesys/file.h"
+#include "filesys/filesys.h"
+#include "threads/malloc.h"
 
 #define STDIN 0
 #define STDOUT 1
@@ -51,6 +55,79 @@ void close (int fd);
 static void (*syscall_handlers[SYS_CALL_NUM])(struct intr_frame *); // array of all system calls
 
 /*
+get current thread's file_descriptor by
+return NULL if not found
+*/
+struct file_descriptor* get_fd_entry(int fd){
+  struct list_elem *e;
+  struct list *fd_list = &thread_current()->fd_list;
+  for(e = list_begin(fd_list);e!=list_end(fd_list); e = list_next(e)){
+    struct file_descriptor *fd = list_entry(e , struct file_descriptor, elem);
+    if(fd->fd == fd){
+      return fd;
+    }
+  }
+  return NULL;
+}
+
+
+/**
+Creates a new file called file initially initial size bytes in size.
+Returns true if successful, false otherwise.
+Creating a new file does not open it:
+opening the new file is a separate operation
+which would require a open system call.
+
+@param file: file name
+@param
+*/
+bool create (const char *file, unsigned initial_size){
+    /*
+    TODO: check of file_name valid
+    */
+    return filesys_create(file,initial_size);
+}
+
+/*
+Opens the file called file. Returns a nonnegative integer handle called a “file descriptor” (fd), or -1 if the file could not be opened. File descriptors numbered 0 and 1 are reserved for the console:
+fd 0 (STDIN_FILENO) is standard input, fd 1 (STDOUT_FILENO) is standard ouint open (const char *file){
+tput.
+The open system call will never return either of these file descriptors,
+which are valid as system call arguments only as explicitly described below.
+Each process has an independent set of file descriptors.
+File descriptors are not inherited by child processes.
+When a single file is opened more than once,
+whether by a single process or different processes, each open returns a new
+file descriptor. Different file descriptors for a single file are
+closed independently in separate calls to close and they do not share
+*/
+
+int open (const char *file){
+    /*
+    TODO: check valid string
+    */
+    struct file* f = filesys_open(file);
+    // open  fail, kill the process
+    if(f == NULL){
+      exit(-1);
+    }
+
+    // add file descriptor
+    struct file_descriptor *fd = malloc(sizeof(struct file_descriptor));
+    // malloc fails
+    if(fd == NULL){
+      exit(-1);
+    }
+    struct thread *cur = thread_current();
+    fd->fd = cur->next_fd++;
+    fd->file = f;
+    list_push_back(&cur->fd_list,&fd->elem);
+
+    return fd->fd;
+
+}
+
+/*
 wait for process with pid
 */
 int wait (pid_t pid){
@@ -63,6 +140,17 @@ int write (int fd, const void *buffer, unsigned length){
   if(fd==STDOUT){ // stdout
       putbuf((char *) buffer,(size_t)length);
       return (int)length;
+  }else{
+    struct file_descriptor *fd = get_fd_entry(fd);
+    //open fail
+    if(fd==NULL){
+      exit(-1);
+    }
+
+    struct file *f = fd->file;
+
+    return (int) file_write(f,buffer,length);
+
   }
 }
 
@@ -187,11 +275,34 @@ void sys_wait(struct intr_frame* f){
   pid = *((int*)f->esp+1);
   f->eax = wait(pid);
 };
-void sys_create(struct intr_frame* f){}; /* Create a file. */
+void sys_create(struct intr_frame* f){
+if(!is_valid_pointer(f->esp+4,4)||!is_valid_pointer(f->esp+8,4)){
+  exit(-1);
+}
+char* file_name = *(char **)(f->esp+4);
+unsigned size = *(int *)(f->esp+8);
+f->eax = create(file_name,size);
+
+}; /* Create a file. */
+
 void sys_remove(struct intr_frame* f){};/* Create a file. */
-void sys_open(struct intr_frame* f){}; /*Open a file. */
+void sys_open(struct intr_frame* f){
+
+  if (!is_valid_pointer(f->esp +4, 4)){
+    exit(-1);
+  }
+
+  char *file_name = *(char **)(f->esp+4);
+  f->eax = open(file_name);
+
+
+}; /*Open a file. */
+
 void sys_filesize(struct intr_frame* f){};/* Obtain a file's size. */
-void sys_read(struct intr_frame* f){};  /* Read from a file. */
+void sys_read(struct intr_frame* f){
+
+
+};  /* Read from a file. */
 
 void sys_write(struct intr_frame* f){
   if(!is_valid_pointer(f->esp+4,12)){

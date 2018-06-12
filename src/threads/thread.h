@@ -98,7 +98,7 @@ struct thread
     tid_t parent_id;                    /* parent pid (tid) */
     uint32_t *pagedir;                  /* Page directory. */
     struct list children;               /* child processes */
-    struct list file_descriptors;       /* List of all file_descriptor it owns*/
+    struct list fd_list;       /* List of all file_descriptor it owns*/
     int next_fd; // next file descriptor of the process
     int exit_status;
 #endif
