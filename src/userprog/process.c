@@ -119,41 +119,7 @@ int read_pipe(int pid,enum action action){
 }
 }
 
-/*
-int read_pipe(int pid,enum action action){
 
-  struct list_elem *e;
-  for(e = list_begin(&read_list); e != list_end(&read_list); e = list_next(e) ){
-    struct read_elem *re = list_entry(e,struct read_elem, elem);
-    if(re->pid == pid && re->action == action){
-      list_remove(e);
-      int value = re->value;
-      free(re);
-      return value;
-    }
-  }
-
-  struct wait_elem *we = malloc(sizeof(struct wait_elem));
-  sema_init(&we->sema,0);
-  we->pid = pid;
-  we->action = action;
-  list_push_back(&wait_list,&we->elem);
-  sema_down(&we->sema);
-
-  for(e = list_begin(&read_list); e != list_end(&read_list); e = list_next(e) ){
-    struct read_elem *re = list_entry(e,struct read_elem, elem);
-      if(re->pid == pid && re->action == action){
-        list_remove(e);
-        list_remove(&we->elem);
-        int value = re->value;
-        free(re);
-        free(we);
-        return value;
-      }
-  }
-
-}
-*/
 
 
 
@@ -167,6 +133,10 @@ void process_init(){
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
+
+   /*
+   wait child to start and get correct tid
+   */
 tid_t
 process_execute (const char *file_name)
 {
@@ -189,21 +159,27 @@ process_execute (const char *file_name)
   thread_name = strtok_r(file_name," ",&save_ptr);
   // thread->name max 16
   tid = thread_create (thread_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
+
+  tid = read_pipe(tid,EXEC);
+  if (tid == TID_ERROR){
     palloc_free_page (fn_copy);
+    return TID_ERROR;
+  }
+
+
 
   /*
-  add this thread to children
+  add this thread to children, make shure that the thread start correctly
   */
 
   struct thread *child = get_thread_by_tid(tid);
   child->parent_id = thread_current()->tid;
-  
+
 
   struct process *p = malloc(sizeof(struct process));
   if(p==NULL){
 
-    return -1;
+    return TID_ERROR;
   }
   p->thread = child;
 
@@ -236,6 +212,18 @@ start_process (void *file_name_)
   // esp: The interrupted thread’s stack pointer.
   success = load (argv[0], &if_.eip, &if_.esp);
 
+  if (!success){
+    // load fial set exit status
+
+    write_pipe(thread_current()->tid,EXEC,TID_ERROR);
+    palloc_free_page (file_name);
+    thread_current()->exit_status = -1;
+    thread_exit ();
+  }
+  //TODO :: why
+  // PASS ARG-ONCE HERE WHY!!!
+  int id = thread_current()->tid;
+  write_pipe(id,EXEC,id);
   //put arguments into stack;
   int i=argc;
   char * addr_arr[argc];
@@ -285,8 +273,6 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success)
-    thread_exit ();
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -416,7 +402,7 @@ process_exit (void)
     /*
     write to pipe "notify" father
     */
-    write_pipe(cur->tid,WAIT,0);
+    write_pipe(cur->tid,WAIT,cur->exit_status);
     /*
     TODO: remove all children's signal in the pipe
     */
