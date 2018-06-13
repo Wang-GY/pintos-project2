@@ -22,7 +22,7 @@ typedef int pid_t;
 
 void sys_halt(struct intr_frame* f); /* Halt the operating system. */
 void sys_exit(struct intr_frame* f); /* Terminate this process. */
-void sus_exec(struct intr_frame* f); /* Start another process. */
+void sys_exec(struct intr_frame* f); /* Start another process. */
 void sys_wait(struct intr_frame* f); /* Wait for a child process to die. */
 void sys_create(struct intr_frame* f); /* Create a file. */
 void sys_remove(struct intr_frame* f);/* Create a file. */
@@ -82,6 +82,7 @@ which would require a open system call.
 @param
 */
 bool create (const char *file, unsigned initial_size){
+  //printf("call create %s\n",file);
     /*
     TODO: check of file_name valid
     */
@@ -96,6 +97,7 @@ open or closed. and removing an open file does not
 close it
 */
 bool remove (const char *file){
+  //printf("call remove file %s\n",file);
   return filesys_remove(file);
 }
 
@@ -114,6 +116,7 @@ closed independently in separate calls to close and they do not share
 */
 
 int open (const char *file){
+    //printf("call open file %s\n",file );
     /*
     TODO: check valid string
     */
@@ -153,17 +156,18 @@ int wait (pid_t pid){
 write buffer to stdout or file
 */
 int write (int fd, const void *buffer, unsigned length){
+  //printf("call write fd:%d \n", fd);
   if(fd==STDOUT){ // stdout
       putbuf((char *) buffer,(size_t)length);
       return (int)length;
   }else{
-    struct file_descriptor *fd = get_fd_entry(fd);
+    struct file_descriptor *fd_entry = get_fd_entry(fd);
     //open fail
-    if(fd==NULL){
+    if(fd_entry==NULL){
       exit(-1);
     }
 
-    struct file *f = fd->file;
+    struct file *f = fd_entry->file;
 
     return (int) file_write(f,buffer,length);
 
@@ -184,13 +188,13 @@ implicitly closes all its open file descriptors,
  as if by calling this function for each one.
 */
 void close (int fd){
-  struct file_descriptor *file_descriptor = get_fd_entry(fd);
+  struct file_descriptor *fd_entry = get_fd_entry(fd);
   // close more than once will fail
-  if(file_descriptor == NULL){
+  if(fd_entry == NULL){
     exit(-1);
   }
-  file_close(file_descriptor->file);
-  list_remove(&file_descriptor->elem);
+  file_close(fd_entry->file);
+  list_remove(&fd_entry->elem);
   //TODO : fix free bug.
   //free(file_descriptor);
 }
@@ -202,17 +206,17 @@ or -1 if the file could not be read (due to a condition other than end of file).
  Fd 0 reads from the keyboard using input_getc().
 */
 int read (int fd, void *buffer, unsigned length){
-
-  printf("syscall read : fd: %d\n",fd);
+  // printf("call read %d\n", fd);
   if(fd==STDIN){
     for(unsigned int i=0;i<length;i++){
       *((char **)buffer)[i] = input_getc();
     }
     return length;
   }else{
+    // printf("read from file %d\n",fd );
     struct file_descriptor *fd_entry = get_fd_entry(fd);
     // file could not be read
-    if(fd == NULL){
+    if(fd_entry == NULL){
       return -1;
     }
     return file_read(fd_entry->file,buffer,length);
@@ -228,7 +232,7 @@ pid_t exec (const char *file){
 
 void seek (int fd, unsigned position){
   struct file_descriptor *fd_entry = get_fd_entry(fd);
-  if(fd == NULL){
+  if(fd_entry == NULL){
     exit(-1);
   }
   file_seek(fd_entry->file,position);
@@ -265,6 +269,11 @@ syscall_init (void)
   syscall_handlers[SYS_SEEK] = &sys_seek;
   syscall_handlers[SYS_TELL] = &sys_tell;
   syscall_handlers[SYS_CLOSE] =&sys_close;
+
+  syscall_handlers[SYS_READ] = &sys_read;
+  syscall_handlers[SYS_EXEC] = &sys_exec;
+  syscall_handlers[SYS_FILESIZE] = &sys_filesize;
+
 }
 
 
@@ -328,6 +337,7 @@ return true;
 return true if it is a valid string
 */
 bool is_valid_string(void *str){
+  //return true;
   int ch=-1;
 while((ch=get_user((uint8_t*)str++))!='\0' && ch!=-1);
   if(ch=='\0')
@@ -352,7 +362,7 @@ void sys_exit(struct intr_frame* f){
 };
 
 /* Start another process. */
-void sus_exec(struct intr_frame* f){
+void sys_exec(struct intr_frame* f){
   // max name char[16]
   if(!is_valid_pointer(f->esp+4,4)||!is_valid_string(*(char **)(f->esp + 4))){
     exit(-1);
@@ -419,13 +429,13 @@ void sys_filesize(struct intr_frame* f){
 };/* Obtain a file's size. */
 void sys_read(struct intr_frame* f){
   if (!is_valid_pointer(f->esp + 4, 12)){
-    return -1;
+    exit(-1);
   }
   int fd = *(int *)(f->esp + 4);
   void *buffer = *(char**)(f->esp + 8);
   unsigned size = *(unsigned *)(f->esp + 12);
   if (!is_valid_pointer(buffer, 1) || !is_valid_pointer(buffer + size,1)){
-    return -1;
+    exit(-1);
   }
 
   f->eax = read(fd,buffer,size);
@@ -443,7 +453,7 @@ void sys_write(struct intr_frame* f){
   if (!is_valid_pointer(buffer, 1) || !is_valid_pointer(buffer + size,1)){
     exit(-1);
 }
-  write(fd,buffer,size);
+  f->eax = write(fd,buffer,size);
   return;
 }; /* Write to a file. */
 
