@@ -140,6 +140,7 @@ void process_init(){
 tid_t
 process_execute (const char *file_name)
 {
+  // printf("process execute :%s\n",file_name );
   char *fn_copy;
   tid_t tid;
 
@@ -155,12 +156,14 @@ process_execute (const char *file_name)
 
   // thread name: file_name(with arguments)
   // start_process arguments: fn_copy
-  char* thread_name,*save_ptr;
-  thread_name = strtok_r(file_name," ",&save_ptr);
+  char *argv[MAX_ARGC];
+  int argc;
+  extract_command(file_name,argv,&argc);
   // thread->name max 16
-  tid = thread_create (thread_name, PRI_DEFAULT, start_process, fn_copy);
-
+  tid = thread_create (argv[0], PRI_DEFAULT, start_process, fn_copy);
+  // printf("thread create: %s, tid: %d\n",argv[0],tid);
   tid = read_pipe(tid,EXEC);
+  // printf("read pipe tid: %d\n",tid);
   if (tid == TID_ERROR){
     palloc_free_page (fn_copy);
     return TID_ERROR;
@@ -184,7 +187,7 @@ process_execute (const char *file_name)
   p->thread = child;
 
   list_push_back(&thread_current()->children,&p->elem);
-  //printf("%d add %d as child\n", thread_current()->tid,tid);
+  // printf("%d add %d as child\n", thread_current()->tid,tid);
 
   return tid;
 }
@@ -346,6 +349,7 @@ bool is_child(tid_t tid,bool delete){
 return true if current can wait this process
 */
 bool can_wait(tid_t tid){
+  //TODO : if -1 return false
   return is_child(tid,true);
 }
 
