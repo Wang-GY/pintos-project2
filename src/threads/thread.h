@@ -101,6 +101,7 @@ struct thread
     struct list fd_list;       /* List of all file_descriptor it owns*/
     int next_fd; // next file descriptor of the process
     int exit_status;
+    struct file *executable;     /* The thread's executable*/
 #endif
 
     /* Owned by thread.c. */

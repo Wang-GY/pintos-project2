@@ -374,12 +374,56 @@ process_wait (tid_t child_tid)
   // return -1;
 }
 
+/*
+remove all signals write by current thread
+*/
+void remove_child_signal(){
+  struct list_elem *e;
+  for(e = list_begin(&read_list);e != list_end(&read_list); e = list_next(e)){
+    struct read_elem *re = list_entry(e,struct read_elem, elem);
+    if(is_child(re->pid,false)){
+        list_remove(e);
+    }
+  }
+}
+
+/*
+
+close all opend files opened by current_thread
+*/
+
+void close_all_opened_files(){
+  struct list *opened = &thread_current()->fd_list;
+
+  struct list_elem *e;
+  for(e = list_begin(opened);e != list_end(opened); e = list_next(e)){
+    struct file_descriptor *fd_entry = list_entry(e,struct file_descriptor,elem);
+    file_close(fd_entry->file);
+    list_remove(e);
+    // free(fd_entry);
+  }
+
+  file_close(thread_current()->executable);
+
+}
+
 /* Free the current process's resources. */
 void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  printf("%s: exit(%d)\n", cur->name, cur->exit_status);
+  write_pipe(cur->tid,WAIT,cur->exit_status);
+  // printf("write pipe %s, WAIT, %d\n", cur->name,cur->exit_status);
+
+  // remove all child single or let them be a child of main process
+  remove_child_signal();
+
+  // close all files it opend.
+  close_all_opened_files();
+
   /*
   don't exit kernel
   */
@@ -406,11 +450,9 @@ process_exit (void)
     /*
     write to pipe "notify" father
     */
-    write_pipe(cur->tid,WAIT,cur->exit_status);
-    /*
-    TODO: remove all children's signal in the pipe
-    */
-    printf("%s: exit(%d)\n", cur->name, cur->exit_status);
+
+
+
 }
 
 /* Sets up the CPU for running user code in the current
@@ -609,7 +651,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  if(success){
+    t->executable = file;
+    file_deny_write(file);
+  }
+  else
+  // when the process exit, the executable will be closed.
+    file_close (file);
   return success;
 }
 

@@ -195,8 +195,7 @@ void close (int fd){
   }
   file_close(fd_entry->file);
   list_remove(&fd_entry->elem);
-  //TODO : fix free bug.
-  //free(file_descriptor);
+  free(fd_entry);
 }
 
 /*
@@ -501,6 +500,7 @@ syscall_handler (struct intr_frame *f)
   if(syscall_num<=0||syscall_num>=SYS_CALL_NUM){
     exit(-1);
   }
+  // printf("sys call number: %d\n",syscall_num );
   syscall_handlers[syscall_num](f);
 
 }
