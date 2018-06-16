@@ -55,6 +55,14 @@ void close (int fd);
 //store all syscalls
 static void (*syscall_handlers[SYS_CALL_NUM])(struct intr_frame *); // array of all system calls
 
+struct fd_elem{
+  int fd;
+  struct file *file;
+  struct list_elem elem;
+  struct list_elem thread_elem;
+}
+
+static struct list file_list;
 
 
 /*
@@ -131,7 +139,8 @@ int open (const char *file){
     }
 
     // add file descriptor
-    struct file_descriptor *fd = malloc(sizeof(struct file_descriptor));
+    struct file_descriptor *fd = (struct file_descriptor *)malloc(sizeof(struct file_descriptor));
+    printf("get fd %u\n",fd);
     // malloc fails
     if(fd == NULL){
       return -1; // open fail
@@ -177,11 +186,40 @@ int write (int fd, const void *buffer, unsigned length){
   }
 }
 
+
+/*
+close all opend files opened by current_thread
+*/
+
+void close_all_opened_files(){
+
+  if(!lock_held_by_current_thread(&file_lock))
+    lock_acquire(&file_lock);
+
+  struct list *opened = &thread_current()->fd_list;
+
+  struct list_elem *e;
+  for(e = list_begin(opened);e != list_end(opened); e = list_next(e)){
+    struct file_descriptor *fd_entry = list_entry(e,struct file_descriptor,elem);
+    file_close(fd_entry->file);
+    list_remove(e);
+    // TODO : fix bug
+    printf("free fd %u\n",fd_entry);
+    free(fd_entry);
+  }
+
+  file_close(thread_current()->executable);
+    lock_release(&file_lock);
+}
+
+
+
 /*
 exit curret thread with given status
 */
 void exit(int status){
   thread_current()->exit_status = status;
+  close_all_opened_files();
   thread_exit();
 }
 

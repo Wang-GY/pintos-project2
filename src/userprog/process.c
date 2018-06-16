@@ -24,7 +24,7 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
-void extract_command(char* command,char* argv[],int* argc);
+char* extract_command(char* command,char* argv[],int* argc);
 
 
 /*
@@ -59,6 +59,7 @@ void pipe_init(){
 add an elem to read list
 */
 void write_pipe(int pid,enum action action,int value){
+  enum intr_level old_level = intr_disable ();
   /*
   create a elem in read_list
   */
@@ -77,7 +78,7 @@ void write_pipe(int pid,enum action action,int value){
     if(we->pid == pid && we->action == action)
       sema_up(&we->sema);
   }
-
+  intr_set_level(old_level);
 }
 
 
@@ -87,7 +88,7 @@ read the value in read list.
 create a read request if what the request want is not in read_list yet.
 */
 int read_pipe(int pid,enum action action){
-
+  enum intr_level old_level = intr_disable ();
   for(;;){
     /*
     check if what reader want already ready
@@ -101,6 +102,7 @@ int read_pipe(int pid,enum action action){
       free(re);
       return value;
     }
+    intr_set_level(old_level);
   }
   /*
   what reader want is not in read_list, create a wait request
@@ -159,7 +161,7 @@ process_execute (const char *file_name)
   // start_process arguments: fn_copy
   char *argv[MAX_ARGC];
   int argc;
-  extract_command(file_name,argv,&argc);
+  char* command_bak = extract_command(file_name,argv,&argc);
   // thread->name max 16
 
   tid = thread_create (argv[0], PRI_DEFAULT, start_process, fn_copy);
@@ -216,13 +218,13 @@ start_process (void *file_name_)
   // load name const char* Executable file name
   char *argv[MAX_ARGC];
   int argc;
-  extract_command(file_name,argv,&argc);
+  char* command_bak = extract_command(file_name,argv,&argc);
   // eip: The address of the next instruction to be executed by the interrupted thread.
   // esp: The interrupted thread’s stack pointer.
   success = load (argv[0], &if_.eip, &if_.esp);
   if (!success){
     // load fial set exit status
-
+    // free(command_bak);
     write_pipe(thread_current()->tid,EXEC,TID_ERROR);
     thread_current()->exit_status = -1;
     thread_exit ();
@@ -280,6 +282,7 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   // printf("282 free\n");
+  free(command_bak);
   palloc_free_page (file_name);
   // printf("282 free done\n");
 
@@ -307,7 +310,7 @@ argc 2
 argv[0] ls
 argv[1] -l
 */
-void extract_command(char* command,char* argv[],int* argc){
+char* extract_command(char* command,char* argv[],int* argc){
   char* command_bak = NULL;
   *argc=0;
   command_bak = malloc(strlen(command)+1);
@@ -326,6 +329,7 @@ void extract_command(char* command,char* argv[],int* argc){
     temp = strtok_r(NULL," ",&save);
     argv[*argc] = temp;
   }
+  return command_bak;
 }
 
 /*
@@ -410,29 +414,7 @@ void remove_wait_request(){
 
 }
 
-/*
 
-close all opend files opened by current_thread
-*/
-
-void close_all_opened_files(){
-  if(!lock_held_by_current_thread(&file_lock))
-    lock_acquire(&file_lock);
-
-  struct list *opened = &thread_current()->fd_list;
-
-  struct list_elem *e;
-  for(e = list_begin(opened);e != list_end(opened); e = list_next(e)){
-    struct file_descriptor *fd_entry = list_entry(e,struct file_descriptor,elem);
-    file_close(fd_entry->file);
-    list_remove(e);
-    // TODO : fix bug
-    // free(fd_entry);
-  }
-
-  file_close(thread_current()->executable);
-    lock_release(&file_lock);
-}
 
 void free_children(){
   struct list *children = &thread_current()->children;
@@ -467,8 +449,6 @@ process_exit (void)
   // free_children();
   // printf("free children done\n");
 
-
-  close_all_opened_files();
   /*
 
   free all children
