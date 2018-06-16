@@ -371,7 +371,9 @@ void sys_exec(struct intr_frame* f){
     exit(-1);
   }
   char *file_name = *(char **)(f->esp+4);
+  lock_acquire(&file_lock);
   f->eax = exec(file_name);
+  lock_release(&file_lock);
 };
 
 /* Wait for a child process to die. */

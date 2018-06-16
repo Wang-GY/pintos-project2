@@ -161,14 +161,17 @@ process_execute (const char *file_name)
   int argc;
   extract_command(file_name,argv,&argc);
   // thread->name max 16
-  lock_acquire(&file_lock);
+
   tid = thread_create (argv[0], PRI_DEFAULT, start_process, fn_copy);
-  lock_release(&file_lock);
+
   // printf("thread create: %s, tid: %d\n",argv[0],tid);
   tid = read_pipe(tid,EXEC);
   // printf("read pipe tid: %d\n",tid);
   if (tid == TID_ERROR){
+    // TODO: free bug?
+    // printf("171 free\n");
     palloc_free_page (fn_copy);
+    // printf("177 free done\n");
     return TID_ERROR;
   }
 
@@ -217,12 +220,10 @@ start_process (void *file_name_)
   // eip: The address of the next instruction to be executed by the interrupted thread.
   // esp: The interrupted thread’s stack pointer.
   success = load (argv[0], &if_.eip, &if_.esp);
-
   if (!success){
     // load fial set exit status
 
     write_pipe(thread_current()->tid,EXEC,TID_ERROR);
-    palloc_free_page (file_name);
     thread_current()->exit_status = -1;
     thread_exit ();
   }
@@ -278,7 +279,9 @@ start_process (void *file_name_)
   //printf("%d\treturn address\t%d\n",if_.esp,(*(int *)if_.esp));
 
   /* If load failed, quit. */
+  // printf("282 free\n");
   palloc_free_page (file_name);
+  // printf("282 free done\n");
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -432,13 +435,17 @@ process_exit (void)
   write_pipe(cur->tid,WAIT,cur->exit_status);
   // printf("write pipe %s, WAIT, %d\n", cur->name,cur->exit_status);
 
+  //printf("remove child signal\n");
   // remove all child single or let them be a child of main process
   remove_child_signal();
 
+  // printf("close open files\n");
   // close all files it opend.
   close_all_opened_files();
 
+  // printf("free children\n");
   free_children();
+  // printf("free children done\n");
 
   /*
 
