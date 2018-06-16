@@ -404,7 +404,7 @@ void sys_remove(struct intr_frame* f){
   if (!is_valid_pointer(f->esp +4, 4) || !is_valid_string(*(char **)(f->esp + 4))){
     exit(-1);
   }
-  char file_name = *(char **)(f->esp+4);
+  char *file_name = *(char **)(f->esp+4);
   f->eax = remove(file_name);
 
 };/* Create a file. */

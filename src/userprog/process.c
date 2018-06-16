@@ -389,8 +389,25 @@ void remove_child_signal(){
     struct read_elem *re = list_entry(e,struct read_elem, elem);
     if(is_child(re->pid,false)){
         list_remove(e);
+        free(re);
     }
   }
+}
+
+/*
+remove wait request
+*/
+void remove_wait_request(){
+  struct list_elem *e;
+  for(e = list_begin(&wait_list); e!=list_end(&wait_list);e = list_next(e)){
+    struct wait_elem *we = list_entry(e,struct wait_elem, elem);
+    if(is_child(we->pid,false)){
+      list_remove(e);
+      sema_up(&we->sema);
+      free(we);
+    }
+  }
+
 }
 
 /*
@@ -399,6 +416,9 @@ close all opend files opened by current_thread
 */
 
 void close_all_opened_files(){
+  if(!lock_held_by_current_thread(&file_lock))
+    lock_acquire(&file_lock);
+
   struct list *opened = &thread_current()->fd_list;
 
   struct list_elem *e;
@@ -411,7 +431,7 @@ void close_all_opened_files(){
   }
 
   file_close(thread_current()->executable);
-
+    lock_release(&file_lock);
 }
 
 void free_children(){
@@ -437,16 +457,18 @@ process_exit (void)
 
   //printf("remove child signal\n");
   // remove all child single or let them be a child of main process
-  remove_child_signal();
-
-  // printf("close open files\n");
-  // close all files it opend.
-  close_all_opened_files();
-
-  // printf("free children\n");
-  free_children();
+  // remove_child_signal();
+  //
+  // // printf("close open files\n");
+  // // close all files it opend.
+  // remove_wait_request();
+  //
+  // // printf("free children\n");
+  // free_children();
   // printf("free children done\n");
 
+
+  close_all_opened_files();
   /*
 
   free all children
@@ -686,7 +708,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   }
   else
   // when the process exit, the executable will be closed.
+  {
     file_close (file);
+  }
   return success;
 }
 
