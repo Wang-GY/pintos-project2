@@ -8,6 +8,7 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "threads/malloc.h"
+#include "threads/synch.h"
 
 #define STDIN 0
 #define STDOUT 1
@@ -53,6 +54,8 @@ void close (int fd);
 
 //store all syscalls
 static void (*syscall_handlers[SYS_CALL_NUM])(struct intr_frame *); // array of all system calls
+
+
 
 /*
 get current thread's file_descriptor by
@@ -273,6 +276,7 @@ syscall_init (void)
   syscall_handlers[SYS_EXEC] = &sys_exec;
   syscall_handlers[SYS_FILESIZE] = &sys_filesize;
 
+  lock_init(&file_lock);
 }
 
 
@@ -436,8 +440,9 @@ void sys_read(struct intr_frame* f){
   if (!is_valid_pointer(buffer, 1) || !is_valid_pointer(buffer + size,1)){
     exit(-1);
   }
-
+  lock_acquire(&file_lock);
   f->eax = read(fd,buffer,size);
+  lock_release(&file_lock);
 
 };
 
@@ -452,7 +457,9 @@ void sys_write(struct intr_frame* f){
   if (!is_valid_pointer(buffer, 1) || !is_valid_pointer(buffer + size,1)){
     exit(-1);
 }
+  lock_acquire(&file_lock);
   f->eax = write(fd,buffer,size);
+  lock_release(&file_lock);
   return;
 }; /* Write to a file. */
 

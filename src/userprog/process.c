@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -160,7 +161,9 @@ process_execute (const char *file_name)
   int argc;
   extract_command(file_name,argv,&argc);
   // thread->name max 16
+  lock_acquire(&file_lock);
   tid = thread_create (argv[0], PRI_DEFAULT, start_process, fn_copy);
+  lock_release(&file_lock);
   // printf("thread create: %s, tid: %d\n",argv[0],tid);
   tid = read_pipe(tid,EXEC);
   // printf("read pipe tid: %d\n",tid);
@@ -174,7 +177,7 @@ process_execute (const char *file_name)
   /*
   add this thread to children, make shure that the thread start correctly
   */
-
+   enum intr_level old_level = intr_disable ();
   struct thread *child = get_thread_by_tid(tid);
   child->parent_id = thread_current()->tid;
 
@@ -188,7 +191,7 @@ process_execute (const char *file_name)
 
   list_push_back(&thread_current()->children,&p->elem);
   // printf("%d add %d as child\n", thread_current()->tid,tid);
-
+  intr_set_level (old_level);
   return tid;
 }
 
@@ -400,11 +403,22 @@ void close_all_opened_files(){
     struct file_descriptor *fd_entry = list_entry(e,struct file_descriptor,elem);
     file_close(fd_entry->file);
     list_remove(e);
+    // TODO : fix bug
     // free(fd_entry);
   }
 
   file_close(thread_current()->executable);
 
+}
+
+void free_children(){
+  struct list *children = &thread_current()->children;
+  struct list_elem *e;
+
+  for(e =list_begin(children); e!=list_end(children);e = list_next(e)){
+    list_remove(e);
+    free(list_entry(e,struct process, elem));
+  }
 }
 
 /* Free the current process's resources. */
@@ -423,6 +437,14 @@ process_exit (void)
 
   // close all files it opend.
   close_all_opened_files();
+
+  free_children();
+
+  /*
+
+  free all children
+  */
+
 
   /*
   don't exit kernel
