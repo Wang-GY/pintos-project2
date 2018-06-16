@@ -435,6 +435,7 @@ process_exit (void)
 
   printf("%s: exit(%d)\n", cur->name, cur->exit_status);
   write_pipe(cur->tid,WAIT,cur->exit_status);
+  file_close(cur->executable);
   // printf("write pipe %s, WAIT, %d\n", cur->name,cur->exit_status);
 
   //printf("remove child signal\n");
