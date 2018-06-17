@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -23,7 +24,7 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
-void extract_command(char* command,char* argv[],int* argc);
+char* extract_command(char* command,char* argv[],int* argc);
 
 
 /*
@@ -58,6 +59,8 @@ void pipe_init(){
 add an elem to read list
 */
 void write_pipe(int pid,enum action action,int value){
+  enum intr_level old_level = intr_disable ();
+  // printf("%d write pipe %d, %d, %d\n",thread_tid(),pid, action, value);
   /*
   create a elem in read_list
   */
@@ -76,7 +79,7 @@ void write_pipe(int pid,enum action action,int value){
     if(we->pid == pid && we->action == action)
       sema_up(&we->sema);
   }
-
+  intr_set_level(old_level);
 }
 
 
@@ -86,7 +89,8 @@ read the value in read list.
 create a read request if what the request want is not in read_list yet.
 */
 int read_pipe(int pid,enum action action){
-
+  enum intr_level old_level = intr_disable ();
+  // printf("%d read pipe %d, %d\n",thread_tid(),pid, action);
   for(;;){
     /*
     check if what reader want already ready
@@ -100,6 +104,7 @@ int read_pipe(int pid,enum action action){
       free(re);
       return value;
     }
+    intr_set_level(old_level);
   }
   /*
   what reader want is not in read_list, create a wait request
@@ -158,12 +163,12 @@ process_execute (const char *file_name)
   // start_process arguments: fn_copy
   char *argv[MAX_ARGC];
   int argc;
-  extract_command(file_name,argv,&argc);
+  char* command_bak = extract_command(file_name,argv,&argc);
   // thread->name max 16
+
   tid = thread_create (argv[0], PRI_DEFAULT, start_process, fn_copy);
-  // printf("thread create: %s, tid: %d\n",argv[0],tid);
+
   tid = read_pipe(tid,EXEC);
-  // printf("read pipe tid: %d\n",tid);
   if (tid == TID_ERROR){
     palloc_free_page (fn_copy);
     return TID_ERROR;
@@ -174,7 +179,7 @@ process_execute (const char *file_name)
   /*
   add this thread to children, make shure that the thread start correctly
   */
-
+   enum intr_level old_level = intr_disable ();
   struct thread *child = get_thread_by_tid(tid);
   child->parent_id = thread_current()->tid;
 
@@ -184,11 +189,10 @@ process_execute (const char *file_name)
 
     return TID_ERROR;
   }
-  p->thread = child;
+  p->thread = child->tid;
 
   list_push_back(&thread_current()->children,&p->elem);
-  // printf("%d add %d as child\n", thread_current()->tid,tid);
-
+  intr_set_level (old_level);
   return tid;
 }
 
@@ -210,16 +214,14 @@ start_process (void *file_name_)
   // load name const char* Executable file name
   char *argv[MAX_ARGC];
   int argc;
-  extract_command(file_name,argv,&argc);
+  char* command_bak = extract_command(file_name,argv,&argc);
   // eip: The address of the next instruction to be executed by the interrupted thread.
   // esp: The interrupted thread’s stack pointer.
   success = load (argv[0], &if_.eip, &if_.esp);
-
   if (!success){
     // load fial set exit status
-
+    // free(command_bak);
     write_pipe(thread_current()->tid,EXEC,TID_ERROR);
-    palloc_free_page (file_name);
     thread_current()->exit_status = -1;
     thread_exit ();
   }
@@ -275,6 +277,7 @@ start_process (void *file_name_)
   //printf("%d\treturn address\t%d\n",if_.esp,(*(int *)if_.esp));
 
   /* If load failed, quit. */
+  free(command_bak);
   palloc_free_page (file_name);
 
   /* Start the user process by simulating a return from an
@@ -301,7 +304,7 @@ argc 2
 argv[0] ls
 argv[1] -l
 */
-void extract_command(char* command,char* argv[],int* argc){
+char* extract_command(char* command,char* argv[],int* argc){
   char* command_bak = NULL;
   *argc=0;
   command_bak = malloc(strlen(command)+1);
@@ -320,6 +323,7 @@ void extract_command(char* command,char* argv[],int* argc){
     temp = strtok_r(NULL," ",&save);
     argv[*argc] = temp;
   }
+  return command_bak;
 }
 
 /*
@@ -335,10 +339,15 @@ bool is_child(tid_t tid,bool delete){
   struct list_elem *e;
 
   for(e = list_begin(&cur->children); e != list_end(&cur->children);e = list_next(e)){
-    struct thread *t = list_entry(e,struct process,elem)->thread;
-    if(tid == t->tid){
-      if(delete)
+    // TODO: thread was freed!
+    // struct thread *t = list_entry(e,struct process,elem)->thread;
+    int child_tid = list_entry(e,struct process,elem)->thread;
+    // printf("%d has children %d\n",thread_tid(),child_tid);
+    if(tid == child_tid){
+      if(delete){
         list_remove(e);
+        free(list_entry(e,struct process,elem));
+      }
       return true;
     }
   }
@@ -365,8 +374,9 @@ bool can_wait(tid_t tid){
 int
 process_wait (tid_t child_tid)
 {
-  //printf("process wait\n");
+  // printf("process %d wait %d \n",thread_tid(),child_tid);
   if(!can_wait(child_tid)){
+    // printf("%d can't wait tid %d\n",thread_tid(),child_tid);
     return -1;
   }
   return read_pipe(child_tid,WAIT);
@@ -383,28 +393,37 @@ void remove_child_signal(){
     struct read_elem *re = list_entry(e,struct read_elem, elem);
     if(is_child(re->pid,false)){
         list_remove(e);
+        free(re);
     }
   }
 }
 
 /*
-
-close all opend files opened by current_thread
+remove wait request
 */
-
-void close_all_opened_files(){
-  struct list *opened = &thread_current()->fd_list;
-
+void remove_wait_request(){
   struct list_elem *e;
-  for(e = list_begin(opened);e != list_end(opened); e = list_next(e)){
-    struct file_descriptor *fd_entry = list_entry(e,struct file_descriptor,elem);
-    file_close(fd_entry->file);
-    list_remove(e);
-    // free(fd_entry);
+  for(e = list_begin(&wait_list); e!=list_end(&wait_list);e = list_next(e)){
+    struct wait_elem *we = list_entry(e,struct wait_elem, elem);
+    if(is_child(we->pid,false)){
+      list_remove(e);
+      sema_up(&we->sema);
+      free(we);
+    }
   }
 
-  file_close(thread_current()->executable);
+}
 
+
+
+void free_children(){
+  struct list *children = &thread_current()->children;
+  struct list_elem *e;
+
+  for(e =list_begin(children); e!=list_end(children);e = list_next(e)){
+    list_remove(e);
+    free(list_entry(e,struct process, elem));
+  }
 }
 
 /* Free the current process's resources. */
@@ -416,13 +435,27 @@ process_exit (void)
 
   printf("%s: exit(%d)\n", cur->name, cur->exit_status);
   write_pipe(cur->tid,WAIT,cur->exit_status);
+  file_close(cur->executable);
   // printf("write pipe %s, WAIT, %d\n", cur->name,cur->exit_status);
 
-  // remove all child single or let them be a child of main process
-  remove_child_signal();
+  // TODO: free these
+  // // printf("remove child signal\n");
+  // // remove all child single or let them be a child of main process
+  // remove_child_signal();
+  //
+  // // printf("close open files\n");
+  // // close all files it opend.
+  // remove_wait_request();
+  //
+  // // printf("free children\n");
+  // free_children();
+  // // printf("free children done\n");
 
-  // close all files it opend.
-  close_all_opened_files();
+  /*
+
+  free all children
+  */
+
 
   /*
   don't exit kernel
@@ -657,7 +690,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   }
   else
   // when the process exit, the executable will be closed.
+  {
     file_close (file);
+  }
   return success;
 }
 

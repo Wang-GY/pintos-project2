@@ -8,6 +8,7 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "threads/malloc.h"
+#include "threads/synch.h"
 
 #define STDIN 0
 #define STDOUT 1
@@ -50,24 +51,72 @@ void seek (int fd, unsigned position);
 unsigned tell (int fd);
 void close (int fd);
 
+static struct file *find_file_by_fd (int fd);
+static struct fd_entry *find_fd_entry_by_fd (int fd);
+static int alloc_fid (void);
+static struct fd_entry *find_fd_entry_by_fd_in_process (int fd);
 
 //store all syscalls
 static void (*syscall_handlers[SYS_CALL_NUM])(struct intr_frame *); // array of all system calls
 
 /*
-get current thread's file_descriptor by
-return NULL if not found
+file descriptors
 */
-struct file_descriptor* get_fd_entry(int fd){
-  struct list_elem *e;
-  struct list *fd_list = &thread_current()->fd_list;
-  for(e = list_begin(fd_list);e!=list_end(fd_list); e = list_next(e)){
-    struct file_descriptor *fd_entry = list_entry(e , struct file_descriptor, elem);
-    if(fd_entry->fd == fd){
-      return fd_entry;
+struct fd_entry{
+  int fd;
+  struct file *file;
+  struct list_elem elem;
+  struct list_elem thread_elem;
+};
+
+static struct list file_list;
+
+/*
+file descriptor id generaor
+generate from 2
+to all process
+*/
+static int
+alloc_fid (void)
+{
+  static int fid = 2;
+  return fid++;
+}
+
+/*
+find fd_entry in current's thread fd_list
+*/
+static struct fd_entry *
+find_fd_entry_by_fd_in_process (int fd)
+{
+  struct fd_entry *ret;
+  struct list_elem *l;
+  struct thread *t;
+
+  t = thread_current ();
+
+  for (l = list_begin (&t->fd_list); l != list_end (&t->fd_list); l = list_next (l))
+    {
+      ret = list_entry (l, struct fd_entry, thread_elem);
+      if (ret->fd == fd)
+        return ret;
     }
-  }
+
   return NULL;
+}
+
+/*
+find file be fd id
+*/
+static struct file *
+find_file_by_fd (int fd)
+{
+  struct fd_entry *ret;
+
+  ret = find_fd_entry_by_fd (fd);
+  if (!ret)
+    return NULL;
+  return ret->file;
 }
 
 
@@ -116,7 +165,9 @@ closed independently in separate calls to close and they do not share
 */
 
 int open (const char *file){
-    //printf("call open file %s\n",file );
+    //printf("call open file %s\n",file );  // if (get_user(((uint8_t *)esp)+i) == -1){
+  //   return false;
+  // }
     /*
     TODO: check valid string
     */
@@ -128,21 +179,19 @@ int open (const char *file){
     }
 
     // add file descriptor
-    struct file_descriptor *fd = malloc(sizeof(struct file_descriptor));
+    struct fd_entry *fde = (struct fd_entry *)malloc(sizeof(struct fd_entry));
     // malloc fails
-    if(fd == NULL){
+    if(fde == NULL){
+      file_close(f);
       return -1; // open fail
     }
     struct thread *cur = thread_current();
-    fd->fd = cur->next_fd;
-    cur->next_fd++;
-    fd->file = f;
-    list_push_back(&cur->fd_list,&fd->elem);
-    // printf("open file %s with fd: %d\n",file,fd->fd);
+    fde->fd = alloc_fid();
+    fde->file = f;
+    list_push_back(&cur->fd_list,&fde->thread_elem);
+    list_push_back(&file_list,&fde->elem);
 
-    // TODO: why faild?
-    //ASSERT(get_fd_entry(get_fd)==fd);
-    return fd->fd;
+    return fde->fd;
 
 }
 
@@ -156,30 +205,38 @@ int wait (pid_t pid){
 write buffer to stdout or file
 */
 int write (int fd, const void *buffer, unsigned length){
-  //printf("call write fd:%d \n", fd);
   if(fd==STDOUT){ // stdout
       putbuf((char *) buffer,(size_t)length);
       return (int)length;
   }else{
-    struct file_descriptor *fd_entry = get_fd_entry(fd);
-    //open fail
-    if(fd_entry==NULL){
+    struct file *f = find_file_by_fd(fd);
+    if(f==NULL){
       exit(-1);
     }
-
-    struct file *f = fd_entry->file;
-
     return (int) file_write(f,buffer,length);
 
   }
 }
 
+
 /*
 exit curret thread with given status
 */
 void exit(int status){
-  thread_current()->exit_status = status;
-  thread_exit();
+
+  /* Close all the files */
+struct thread *t;
+struct list_elem *l;
+
+t = thread_current ();
+while (!list_empty (&t->fd_list))
+  {
+    l = list_begin (&t->fd_list);
+    close (list_entry (l, struct fd_entry, thread_elem)->fd);
+  }
+
+t->exit_status = status;
+thread_exit ();
 }
 
 /*
@@ -188,14 +245,16 @@ implicitly closes all its open file descriptors,
  as if by calling this function for each one.
 */
 void close (int fd){
-  struct file_descriptor *fd_entry = get_fd_entry(fd);
+  struct fd_entry *f = find_fd_entry_by_fd_in_process(fd);
+
   // close more than once will fail
-  if(fd_entry == NULL){
+  if(f == NULL){
     exit(-1);
   }
-  file_close(fd_entry->file);
-  list_remove(&fd_entry->elem);
-  free(fd_entry);
+  file_close (f->file);
+  list_remove (&f->elem);
+  list_remove (&f->thread_elem);
+  free (f);
 }
 
 /*
@@ -212,13 +271,12 @@ int read (int fd, void *buffer, unsigned length){
     }
     return length;
   }else{
-    // printf("read from file %d\n",fd );
-    struct file_descriptor *fd_entry = get_fd_entry(fd);
-    // file could not be read
-    if(fd_entry == NULL){
+    struct file *f = find_file_by_fd(fd);
+
+    if(f == NULL){
       return -1;
     }
-    return file_read(fd_entry->file,buffer,length);
+    return file_read(f,buffer,length);
   }
 }
 /*
@@ -230,28 +288,30 @@ pid_t exec (const char *file){
 
 
 void seek (int fd, unsigned position){
-  struct file_descriptor *fd_entry = get_fd_entry(fd);
-  if(fd_entry == NULL){
+
+  struct file *f = find_file_by_fd(fd);
+  if(f == NULL){
     exit(-1);
   }
-  file_seek(fd_entry->file,position);
+  file_seek(f,position);
 }
 
 int filesize (int fd){
-  struct file_descriptor *fd_entry = get_fd_entry(fd);
-  if(fd_entry == NULL){
+
+  struct file *f = find_file_by_fd(fd);
+  if(f == NULL){
     exit(-1);
   }
-  return file_length(fd_entry->file);
+  return file_length(f);
 
 }
 
 unsigned tell (int fd){
-  struct file_descriptor *fd_entry = get_fd_entry(fd);
-  if(fd_entry == NULL){
+  struct file *f = find_file_by_fd(fd);
+  if(f == NULL){
     exit(-1);
   }
-  return file_tell(fd_entry->file);
+  return file_tell(f);
 }
 
 void
@@ -273,6 +333,8 @@ syscall_init (void)
   syscall_handlers[SYS_EXEC] = &sys_exec;
   syscall_handlers[SYS_FILESIZE] = &sys_filesize;
 
+  lock_init(&file_lock);
+  list_init (&file_list);
 }
 
 
@@ -367,7 +429,9 @@ void sys_exec(struct intr_frame* f){
     exit(-1);
   }
   char *file_name = *(char **)(f->esp+4);
+  lock_acquire(&file_lock);
   f->eax = exec(file_name);
+  lock_release(&file_lock);
 };
 
 /* Wait for a child process to die. */
@@ -398,7 +462,7 @@ void sys_remove(struct intr_frame* f){
   if (!is_valid_pointer(f->esp +4, 4) || !is_valid_string(*(char **)(f->esp + 4))){
     exit(-1);
   }
-  char file_name = *(char **)(f->esp+4);
+  char *file_name = *(char **)(f->esp+4);
   f->eax = remove(file_name);
 
 };/* Create a file. */
@@ -411,7 +475,9 @@ void sys_open(struct intr_frame* f){
     exit(-1);
   }
   char *file_name = *(char **)(f->esp+4);
+  lock_acquire(&file_lock);
   f->eax = open(file_name);
+  lock_release(&file_lock);
 
 
 }; /*Open a file. */
@@ -436,8 +502,9 @@ void sys_read(struct intr_frame* f){
   if (!is_valid_pointer(buffer, 1) || !is_valid_pointer(buffer + size,1)){
     exit(-1);
   }
-
+  lock_acquire(&file_lock);
   f->eax = read(fd,buffer,size);
+  lock_release(&file_lock);
 
 };
 
@@ -452,7 +519,9 @@ void sys_write(struct intr_frame* f){
   if (!is_valid_pointer(buffer, 1) || !is_valid_pointer(buffer + size,1)){
     exit(-1);
 }
+  lock_acquire(&file_lock);
   f->eax = write(fd,buffer,size);
+  lock_release(&file_lock);
   return;
 }; /* Write to a file. */
 
@@ -503,4 +572,21 @@ syscall_handler (struct intr_frame *f)
   // printf("sys call number: %d\n",syscall_num );
   syscall_handlers[syscall_num](f);
 
+}
+
+
+static struct fd_entry *
+find_fd_entry_by_fd (int fd)
+{
+  struct fd_entry *ret;
+  struct list_elem *l;
+
+  for (l = list_begin (&file_list); l != list_end (&file_list); l = list_next (l))
+    {
+      ret = list_entry (l, struct fd_entry, elem);
+      if (ret->fd == fd)
+        return ret;
+    }
+
+  return NULL;
 }
