@@ -15,15 +15,14 @@ write-boundary write-zero write-stdin write-bad-fd exec-once exec-arg	\
 exec-multiple exec-missing exec-bad-ptr wait-simple wait-twice		\
 wait-killed wait-bad-pid multi-recurse multi-child-fd rox-simple	\
 rox-child rox-multichild bad-read bad-write bad-read2 bad-write2        \
-bad-jump bad-jump2  ) 
-# ww my-test-1
+bad-jump bad-jump2 wgy-test-1 wgy-test-2 )
 
 
 tests/userprog_PROGS = $(tests/userprog_TESTS) $(addprefix \
 tests/userprog/,child-simple child-args child-bad child-close child-rox)
 
-# tests/userprog/my-test-1_SRC = tests/userprog/my-test-1.c tests/main.c
-# tests/userprog/ww_SRC = tests/userprog/ww.c tests/main.c
+tests/userprog/wgy-test-1_SRC = tests/userprog/wgy-test-1.c tests/main.c
+tests/userprog/wgy-test-2_SRC = tests/userprog/wgy-test-2.c tests/main.c
 tests/userprog/args-none_SRC = tests/userprog/args.c
 tests/userprog/args-single_SRC = tests/userprog/args.c
 tests/userprog/args-multiple_SRC = tests/userprog/args.c
@@ -135,3 +134,6 @@ tests/userprog/multi-child-fd_PUTFILES += tests/userprog/child-close
 tests/userprog/wait-killed_PUTFILES += tests/userprog/child-bad
 tests/userprog/rox-child_PUTFILES += tests/userprog/child-rox
 tests/userprog/rox-multichild_PUTFILES += tests/userprog/child-rox
+
+tests/userprog/wgy-test-1_PUTFILES += tests/userprog/child-simple
+tests/userprog/wgy-test-2_PUTFILES += tests/userprog/sample.txt

@@ -99,7 +99,6 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
     struct list children;               /* child processes */
     struct list fd_list;       /* List of all file_descriptor it owns*/
-    int next_fd; // next file descriptor of the process
     int exit_status;
     struct file *executable;     /* The thread's executable*/
 #endif
