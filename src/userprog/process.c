@@ -168,14 +168,9 @@ process_execute (const char *file_name)
 
   tid = thread_create (argv[0], PRI_DEFAULT, start_process, fn_copy);
 
-  // printf("thread create: %s, tid: %d\n",argv[0],tid);
   tid = read_pipe(tid,EXEC);
-  // printf("read pipe tid: %d\n",tid);
   if (tid == TID_ERROR){
-    // TODO: free bug?
-    // printf("171 free\n");
     palloc_free_page (fn_copy);
-    // printf("177 free done\n");
     return TID_ERROR;
   }
 
@@ -197,7 +192,6 @@ process_execute (const char *file_name)
   p->thread = child->tid;
 
   list_push_back(&thread_current()->children,&p->elem);
-  // printf("%d add %d as child\n", thread_current()->tid,tid);
   intr_set_level (old_level);
   return tid;
 }
@@ -283,10 +277,8 @@ start_process (void *file_name_)
   //printf("%d\treturn address\t%d\n",if_.esp,(*(int *)if_.esp));
 
   /* If load failed, quit. */
-  // printf("282 free\n");
   free(command_bak);
   palloc_free_page (file_name);
-  // printf("282 free done\n");
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -446,8 +438,9 @@ process_exit (void)
   file_close(cur->executable);
   // printf("write pipe %s, WAIT, %d\n", cur->name,cur->exit_status);
 
-  //printf("remove child signal\n");
-  // remove all child single or let them be a child of main process
+  // TODO: free these
+  // // printf("remove child signal\n");
+  // // remove all child single or let them be a child of main process
   // remove_child_signal();
   //
   // // printf("close open files\n");
@@ -456,7 +449,7 @@ process_exit (void)
   //
   // // printf("free children\n");
   // free_children();
-  // printf("free children done\n");
+  // // printf("free children done\n");
 
   /*
 
