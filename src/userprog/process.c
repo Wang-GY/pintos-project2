@@ -222,8 +222,9 @@ start_process (void *file_name_)
     // load fial set exit status
     // free(command_bak);
     write_pipe(thread_current()->tid,EXEC,TID_ERROR);
-    thread_current()->exit_status = -1;
-    thread_exit ();
+    // thread_current()->exit_status = -1;
+    // thread_exit ();
+    exit(-1);
   }
   //TODO :: why
   // PASS ARG-ONCE HERE WHY!!!
