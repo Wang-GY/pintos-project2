@@ -423,6 +423,193 @@ void exit(int status);
 我代码风格是尽可能多写方法,多用方法,这样可以避免大量的复制粘贴代码,而且也提高了代码的可读性.我没有自己实现list方法,而是
 一直调用原本的数据结构.方法命名采用下划线,意思比较明确,而且也契合pintos源码的命名风格.我的代码量大概在800行左右.我在代码中留有大量注释,方便阅读也记录了自己的思路.
 
+## Hack Testing
+
+### 进程创建攻击
+  创建尽可能多的简单进程直到无法继续创建,我们期望至少可以创建60个子进程.(oom仅要求80个).如果内核对空间的利用浪费过大或者忘记释放不必要的资源,将无法通过这个测试.
+  ```c
+  #include <syscall.h>
+  #include "tests/lib.h"
+  #include "tests/main.h"
+  #define CHILD_CNT 60
+
+  void test_main(void){
+    for(int i=0;i < CHILD_CNT; i++){
+      exec("child-simple");
+    }
+    msg("success, execute %d children",CHILD_CNT);
+  }
+  ```
+- 理想结果
+``` perl
+# -*- perl -*-
+use strict;
+use warnings;
+use tests::tests;
+
+check_expected (IGNORE_EXIT_CODES => 1,IGNORE_USER_FAULTS =>1, [<<'EOF',<<'EOF',<<'EOF']);
+(wgy-test-1) begin
+(wgy-test-1) success, execute 60 children
+(wgy-test-1) end
+EOF
+(wgy-test-1) begin
+(wgy-test-1) success, execute 60 children
+(wgy-test-1) end
+(child-simple) run
+EOF
+(wgy-test-1) begin
+(wgy-test-1) success, execute 60 children
+(wgy-test-1) end
+(child-simple) run
+(child-simple) run
+EOF
+pass;
+```
+
+- 我的结果
+PASS
+
+```
+Copying tests/userprog/wgy-test-1 to scratch partition...
+Copying tests/userprog/child-simple to scratch partition...
+squish-pty bochs -q
+========================================================================
+                       Bochs x86 Emulator 2.6.7
+              Built from SVN snapshot on November 2, 2014
+                  Compiled on Apr 14 2018 at 19:22:50
+========================================================================
+PiLo hda1
+Loading............
+Kernel command line: -q -f extract run wgy-test-1
+Pintos booting with 4,096 kB RAM...
+383 pages available in kernel pool.
+383 pages available in user pool.
+Calibrating timer...  204,600 loops/s.
+hda: 5,040 sectors (2 MB), model "BXHD00011", serial "Generic 1234"
+hda1: 195 sectors (97 kB), Pintos OS kernel (20)
+hda2: 4,096 sectors (2 MB), Pintos file system (21)
+hda3: 186 sectors (93 kB), Pintos scratch (22)
+filesys: using hda2
+scratch: using hda3
+Formatting file system...done.
+Boot complete.
+Extracting ustar archive from scratch device into file system...
+Putting 'wgy-test-1' into the file system...
+Putting 'child-simple' into the file system...
+Erasing ustar archive...
+Executing 'wgy-test-1':
+(wgy-test-1) begin
+(wgy-test-1) success, execute 60 children
+(wgy-test-1) end
+wgy-test-1: exit(0)
+(child-simple) run
+child-simple: exit(81)
+Execution of 'wgy-test-1' complete.
+Timer: 2449 ticks
+Thread: 88 idle ticks, 320 kernel ticks, 2041 user ticks
+hda2 (filesys): 2431 reads, 378 writes
+hda3 (scratch): 185 reads, 2 writes
+Console: 1029 characters output
+Keyboard: 0 keys pressed
+Exception: 0 page faults
+Powering off..
+```
+
+
+### 文件资源攻击
+  如果关闭文件之后不释放文件描述符在内核占用的资源,则无法通过本测试.
+  在我的实现中,一个进程最多可以打开31370个文件.这个测试将不断打开关闭文件重复50000次.如果关闭文件不释放资源,一定在第31370迭代失败.
+
+  ```c
+  #include <syscall.h>
+  #include "tests/lib.h"
+  #include "tests/main.h"
+  // 31370 on my computer
+  #define PASS_NUM  50000
+
+  void
+  test_main (void)
+  {
+
+    int fd =0;
+    /*get max numner of files it can open*/
+    for(int i=0;true;i++){
+    fd= open("sample.txt");
+      if(fd == -1){
+        msg("open fail");
+        return;
+      }
+      close(fd);
+      // sucess
+      if(i > PASS_NUM){
+        break;
+      }
+    }
+    msg("sucess");
+  }
+  ```
+- 理想结果
+
+```perl
+# -*- perl -*-
+use strict;
+use warnings;
+use tests::tests;
+
+check_expected ([<<'EOF']);
+(wgy-test-2) begin
+(wgy-test-2) sucess
+(wgy-test-2) end
+wgy-test-2: exit(0)
+EOF
+pass;
+```
+- 我的结果
+PASS
+```
+Copying tests/userprog/wgy-test-2 to scratch partition...
+Copying ../../tests/userprog/sample.txt to scratch partition...
+squish-pty bochs -q
+========================================================================
+                       Bochs x86 Emulator 2.6.7
+              Built from SVN snapshot on November 2, 2014
+                  Compiled on Apr 14 2018 at 19:22:50
+========================================================================
+PiLo hda1
+Loading............
+Kernel command line: -q -f extract run wgy-test-2
+Pintos booting with 4,096 kB RAM...
+383 pages available in kernel pool.
+383 pages available in user pool.
+Calibrating timer...  204,600 loops/s.
+hda: 5,040 sectors (2 MB), model "BXHD00011", serial "Generic 1234"
+hda1: 195 sectors (97 kB), Pintos OS kernel (20)
+hda2: 4,096 sectors (2 MB), Pintos file system (21)
+hda3: 97 sectors (48 kB), Pintos scratch (22)
+filesys: using hda2
+scratch: using hda3
+Formatting file system...done.
+Boot complete.
+Extracting ustar archive from scratch device into file system...
+Putting 'wgy-test-2' into the file system...
+Putting 'sample.txt' into the file system...
+Erasing ustar archive...
+Executing 'wgy-test-2':
+(wgy-test-2) begin
+(wgy-test-2) sucess
+(wgy-test-2) end
+wgy-test-2: exit(0)
+Execution of 'wgy-test-2' complete.
+Timer: 393652 ticks
+Thread: 5939 idle ticks, 200 kernel ticks, 387513 user ticks
+hda2 (filesys): 200098 reads, 200 writes
+hda3 (scratch): 96 reads, 2 writes
+Console: 969 characters output
+Keyboard: 0 keys pressed
+Exception: 0 page faults
+Powering off..
+
+```
 ## 参考资料
 
 管道设计的理念来自 https://github.com/pindexis/pintos-project2.git
