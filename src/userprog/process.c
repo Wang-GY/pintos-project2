@@ -60,6 +60,7 @@ add an elem to read list
 */
 void write_pipe(int pid,enum action action,int value){
   enum intr_level old_level = intr_disable ();
+  // printf("%d write pipe %d, %d, %d\n",thread_tid(),pid, action, value);
   /*
   create a elem in read_list
   */
@@ -89,6 +90,7 @@ create a read request if what the request want is not in read_list yet.
 */
 int read_pipe(int pid,enum action action){
   enum intr_level old_level = intr_disable ();
+  // printf("%d read pipe %d, %d\n",thread_tid(),pid, action);
   for(;;){
     /*
     check if what reader want already ready
@@ -192,7 +194,7 @@ process_execute (const char *file_name)
 
     return TID_ERROR;
   }
-  p->thread = child;
+  p->thread = child->tid;
 
   list_push_back(&thread_current()->children,&p->elem);
   // printf("%d add %d as child\n", thread_current()->tid,tid);
@@ -345,10 +347,15 @@ bool is_child(tid_t tid,bool delete){
   struct list_elem *e;
 
   for(e = list_begin(&cur->children); e != list_end(&cur->children);e = list_next(e)){
-    struct thread *t = list_entry(e,struct process,elem)->thread;
-    if(tid == t->tid){
-      if(delete)
+    // TODO: thread was freed!
+    // struct thread *t = list_entry(e,struct process,elem)->thread;
+    int child_tid = list_entry(e,struct process,elem)->thread;
+    // printf("%d has children %d\n",thread_tid(),child_tid);
+    if(tid == child_tid){
+      if(delete){
         list_remove(e);
+        free(list_entry(e,struct process,elem));
+      }
       return true;
     }
   }
@@ -375,8 +382,9 @@ bool can_wait(tid_t tid){
 int
 process_wait (tid_t child_tid)
 {
-  //printf("process wait\n");
+  // printf("process %d wait %d \n",thread_tid(),child_tid);
   if(!can_wait(child_tid)){
+    // printf("%d can't wait tid %d\n",thread_tid(),child_tid);
     return -1;
   }
   return read_pipe(child_tid,WAIT);

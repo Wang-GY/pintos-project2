@@ -234,33 +234,6 @@ int write (int fd, const void *buffer, unsigned length){
 
 
 /*
-close all opend files opened by current_thread
-*/
-
-void close_all_opened_files(){
-
-  if(!lock_held_by_current_thread(&file_lock))
-    lock_acquire(&file_lock);
-
-  struct list *opened = &thread_current()->fd_list;
-
-  struct list_elem *e;
-  for(e = list_begin(opened);e != list_end(opened); e = list_next(e)){
-    struct file_descriptor *fd_entry = list_entry(e,struct file_descriptor,elem);
-    file_close(fd_entry->file);
-    list_remove(e);
-    // TODO : fix bug
-    printf("free fd %u\n",fd_entry);
-    free(fd_entry);
-  }
-
-  file_close(thread_current()->executable);
-    lock_release(&file_lock);
-}
-
-
-
-/*
 exit curret thread with given status
 */
 void exit(int status){
@@ -524,7 +497,9 @@ void sys_open(struct intr_frame* f){
     exit(-1);
   }
   char *file_name = *(char **)(f->esp+4);
+  lock_acquire(&file_lock);
   f->eax = open(file_name);
+  lock_release(&file_lock);
 
 
 }; /*Open a file. */

@@ -20,7 +20,8 @@ struct file_descriptor{
 
 struct process{
   struct list_elem elem;
-  struct thread *thread;
+  // struct thread *thread;
+  int thread; // thread id
 };
 
 /**
