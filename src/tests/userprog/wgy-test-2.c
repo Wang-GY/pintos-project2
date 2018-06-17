@@ -1,31 +1,35 @@
 /*
-zoombie attack
+free file attack
+open a file many times and close them all.
+then open them again. we repeat this procegure and hope we can
+get same result every time
 
+if the kernel does't free the file descriptor, this program will use up memory soon
 */
 
 #include <syscall.h>
-#include <debug.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <syscall.h>
-#include <random.h>
 #include "tests/lib.h"
 #include "tests/main.h"
-
-// void test_main(void){
-//
-//   const int attack_num = 500;
-//
-//   for (int i=0; i<attack_num; i++){
-//     exec("child-simple");
-//   }
-//
-// }
+// 31370 on my computer
+#define PASS_NUM  50000
 
 void
 test_main (void)
 {
-  msg ("wait(exec()) = %d", wait (exec ("child-simple")));
+
+  int fd =0;
+  /*get max numner of files it can open*/
+  for(int i=0;true;i++){
+  fd= open("sample.txt");
+    if(fd == -1){
+      msg("open fail");
+      return;
+    }
+    close(fd);
+    // sucess
+    if(i > PASS_NUM){
+      break;
+    }
+  }
+  msg("sucess");
 }

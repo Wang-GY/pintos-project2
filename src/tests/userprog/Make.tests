@@ -136,4 +136,4 @@ tests/userprog/rox-child_PUTFILES += tests/userprog/child-rox
 tests/userprog/rox-multichild_PUTFILES += tests/userprog/child-rox
 
 tests/userprog/wgy-test-1_PUTFILES += tests/userprog/child-simple
-tests/userprog/wgy-test-1_PUTFILES += tests/userprog/child-simple
+tests/userprog/wgy-test-2_PUTFILES += tests/userprog/sample.txt
